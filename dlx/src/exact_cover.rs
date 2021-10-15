@@ -1,11 +1,16 @@
-pub fn exact_cover(matrix: &Vec<(usize, Vec<bool>)>) -> Vec<Vec<usize>> {
+pub struct Row<N,T> {
+    name: N,
+    array: Vec<T>
+}
+
+pub fn exact_cover(matrix: &Vec<Row<usize, bool>>) -> Vec<Vec<usize>> {
     if matrix.len() == 0 {
         Vec::new()
     }
     else if matrix.len() == 1 {
-        let row = &matrix[0].1;
+        let row = &matrix[0].array;
         if row.iter().all(|val| *val == true) {
-            let name = matrix[0].0;
+            let name = matrix[0].name;
             return vec![vec![name]]
         }
         else {
@@ -14,23 +19,23 @@ pub fn exact_cover(matrix: &Vec<(usize, Vec<bool>)>) -> Vec<Vec<usize>> {
     }
     else{
         let mut solutions = Vec::new();
-        let columns = gencolumns(matrix);
+        let columns = gencolumns(&matrix);
 
         let best_col = least_trues_index(&columns);
         let select_rows = true_indices(&columns[best_col]);
             
         for &selected_row in select_rows.iter() {
-            let row = &matrix[selected_row].1;
+            let row = &matrix[selected_row].array;
             let row_len = row.len();
             let cols_range: Vec<usize> = (1..row_len).collect();
             let remove_cols = true_indices(row);
             let remaining_cols = diff(&cols_range, &remove_cols);
 
-            let remaining_rows = covered_rows(matrix, &remove_cols);
+            let remaining_rows = covered_rows(&matrix, &remove_cols);
 
-            let submatrix = gensubmatrix(matrix, &remaining_rows, &remaining_cols);
+            let submatrix = gensubmatrix(&matrix, &remaining_rows, &remaining_cols);
 
-            let selected_row_name = matrix[selected_row].0;
+            let selected_row_name = matrix[selected_row].name;
             let subresults = gen_row_subresults(&submatrix, selected_row_name);
             push_to(&mut solutions, subresults);
         }
@@ -39,7 +44,7 @@ pub fn exact_cover(matrix: &Vec<(usize, Vec<bool>)>) -> Vec<Vec<usize>> {
     }
 }
 
-fn gen_row_subresults(matrix: &Vec<(usize, Vec<bool>)>, row_name: usize) -> Vec<Vec<usize>> {
+fn gen_row_subresults(matrix: &Vec<Row<usize, bool>>, row_name: usize) -> Vec<Vec<usize>> {
     let mut subresults = exact_cover(&matrix);
     for result in subresults.iter_mut() {
         result.push(row_name);
@@ -59,12 +64,12 @@ fn push_to(dest: &mut Vec<Vec<usize>>, source: Vec<Vec<usize>>) {
     }
 }
 
-fn covered_rows(matrix: &Vec<(usize, Vec<bool>)>, cols: &[usize]) -> Vec<usize> {
+fn covered_rows(matrix: &Vec<Row<usize, bool>>, cols: &[usize]) -> Vec<usize> {
     let mut remaining_rows: Vec<usize> = (1..matrix.len()).collect();
     for &col in cols {
         let mut remove_rows: Vec<usize> = Vec::new();
         for &row in &remaining_rows {
-            if matrix[row].1[col] == true {
+            if matrix[row].array[col] == true {
                 remove_rows.push(row);
             }
         }
@@ -85,23 +90,23 @@ fn true_indices(array: &[bool]) -> Vec<usize> {
         .collect()
 }
 
-fn gensubmatrix(matrix: &Vec<(usize, Vec<bool>)>, rows: &[usize], cols: &[usize]) -> Vec<(usize, Vec<bool>)> {
-    let mut submatrix: Vec<(usize, Vec<bool>)> = Vec::new();
+fn gensubmatrix(matrix: &Vec<Row<usize, bool>>, rows: &[usize], cols: &[usize]) -> Vec<Row<usize, bool>> {
+    let mut submatrix: Vec<Row<usize, bool>> = Vec::new();
     for &row in rows {
         let mut new_row: Vec<bool> = Vec::new();
         for &col in cols {
-            let matrix_row = &matrix[row].1;
+            let matrix_row = &matrix[row].array;
             new_row.push(matrix_row[col]);
         }
-        let row_name = matrix[row].0;
-        submatrix.push((row_name, new_row));
+        let row_name = matrix[row].name;
+        submatrix.push(Row { name: row_name, array: new_row });
     }
 
     return submatrix
 }
 
 fn diff(array1: &[usize], array2: &[usize]) -> Vec<usize> {
-    let mut result = Vec::<usize>::new();
+    let mut result : Vec<usize> = Vec::new();
 
     let mut j = 0;
     for (i, val) in array1.iter().enumerate() {
@@ -121,17 +126,17 @@ fn diff(array1: &[usize], array2: &[usize]) -> Vec<usize> {
     result
 }
 
-fn gencolumns<'a>(matrix: &Vec<(usize, Vec<bool>)>) -> Vec<Vec<bool>> {
+fn gencolumns(matrix: &Vec<Row<usize, bool>>) -> Vec<Vec<bool>> {
     if matrix.len() == 0 {
         Vec::new()
     }
     else {
         let row_count = matrix.len();
-        let column_count = matrix[0].1.len();
+        let column_count = matrix[0].array.len();
         let mut columns = vec![vec![false; row_count]; column_count];
     
         for (i, row) in matrix.iter().enumerate() {
-            for (j, elem) in row.1.iter().enumerate() {
+            for (j, elem) in row.array.iter().enumerate() {
                 if *elem == true {
                     columns[j][i] = true;
                 }
