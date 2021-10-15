@@ -1,6 +1,6 @@
 pub struct Row<N,T> {
-    name: N,
-    array: Vec<T>
+    pub name: N,
+    pub array: Vec<T>
 }
 
 pub fn exact_cover(matrix: &Vec<Row<usize, bool>>) -> Vec<Vec<usize>> {
