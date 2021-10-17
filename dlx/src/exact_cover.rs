@@ -76,29 +76,35 @@ fn row_solutions(matrix: &Vec<Row>) -> Vec<Vec<usize>> {
             Vec::new()
         }
     }
-    else{
+    else {
         let mut solutions = Vec::new();
         let columns = gencolumns(&matrix);
 
-        let best_col = least_trues_index(&columns);
+        let best_col = least_trues_index(&columns).unwrap();
         let select_rows = true_indices(&columns[best_col]);
-            
-        for &selected_row in select_rows.iter() {
-            let row = &matrix[selected_row].array;
-            let cols_range: Vec<usize> = (0..row.len()).collect();
-            let remove_cols = true_indices(row);
-            
-            let remaining_cols = diff(&cols_range, &remove_cols);
-            let remaining_rows = covered_rows(&matrix, &remove_cols);
-
-            let submatrix = gensubmatrix(&matrix, &remaining_rows, &remaining_cols);
-
-            let selected_row_name = matrix[selected_row].name;
-            let subresults = gen_row_subresults(&submatrix, selected_row_name);
-            push_to(&mut solutions, subresults);
+        if select_rows.is_empty() {
+            Vec::new()
         }
+        else {
+            for &selected_row in select_rows.iter() {
+                let row = &matrix[selected_row].array;
+                let cols_range: Vec<usize> = (0..row.len()).collect();
+                let remove_cols = true_indices(row);
 
-        solutions
+                if !remove_cols.is_empty() {
+                    let remaining_cols = diff(&cols_range, &remove_cols);
+                    let remaining_rows = covered_rows(&matrix, &remove_cols);
+        
+                    let submatrix = gensubmatrix(&matrix, &remaining_rows, &remaining_cols);
+        
+                    let selected_row_name = matrix[selected_row].name;
+                    let subresults = gen_row_subresults(&submatrix, selected_row_name);
+                    push_to(&mut solutions, subresults); 
+                }
+            }
+    
+            solutions
+        }   
     }
 }
 
@@ -113,10 +119,8 @@ fn gen_row_subresults(matrix: &Vec<Row>, row_name: usize) -> Vec<Vec<usize>> {
 
 fn push_to(dest: &mut Vec<Vec<usize>>, source: Vec<Vec<usize>>) {
     let mut array = source;
-    while array.len() > 0 {
-        if let Some(res) = array.pop() {
-            dest.push(res);
-        }
+    for res in array.drain(0..array.len()) {
+        dest.push(res);
     }
 }
 
@@ -185,7 +189,7 @@ fn diff(array1: &[usize], array2: &[usize]) -> Vec<usize> {
 
 fn gencolumns(matrix: &Vec<Row>) -> Vec<Vec<bool>> {
     if matrix.len() == 0 {
-        Vec::new()
+        vec![Vec::new()]
     }
     else {
         let row_count = matrix.len();
@@ -204,15 +208,191 @@ fn gencolumns(matrix: &Vec<Row>) -> Vec<Vec<bool>> {
     }
 }
 
-fn least_trues_index(array: &Vec<Vec<bool>>) -> usize {
-    array.iter()
-        .enumerate()
-        .min_by(|(_i, col1), (_j, col2)| count_true(col1).cmp(&count_true(col2)))
-        .map(|(i, _col)| i)
-        .unwrap()
+fn least_trues_index(array: &Vec<Vec<bool>>) -> Option<usize> {
+    if array.is_empty() {
+        None
+    }
+    else if array.len() == 1 {
+        Some(0)
+    }
+    else {
+        array.iter()
+            .enumerate()
+            .min_by(|(_i, col1), (_j, col2)| count_true(col1).cmp(&count_true(col2)))
+            .map(|(i, _col)| i)
+    }
 }
 
 fn count_true(list: &Vec<bool>) -> usize {
     list.into_iter().filter(|val| **val == true).count()
+}
+
+
+
+// Tests
+
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    #[test]
+    fn no_elements_and_no_sets() {
+        let cover = super::exact_cover(Vec::new(), Vec::new());
+        assert_eq!(Vec::<Vec<Vec<&str>>>::new(), cover);
+    }
+
+    #[test]
+    fn no_sets() {
+        let cover = super::exact_cover(vec!["a", "b"], Vec::new());
+        assert_eq!(Vec::<Vec<Vec<&str>>>::new(), cover);
+    }
+
+    #[test]
+    fn empty_set() {
+        let cover = super::exact_cover(vec!["a", "b"], vec![Vec::new()]);
+        assert_eq!(Vec::<Vec<Vec<&str>>>::new(), cover);
+
+        let cover = super::exact_cover(vec!["a", "b"], vec![vec![false, false]]);
+        assert_eq!(Vec::<Vec<Vec<&str>>>::new(), cover);
+    }
+
+    #[test]
+    fn set_with_all_elements() {
+        let cover = super::exact_cover(vec!["a", "b"], vec![vec![true, true]]);
+        assert_eq!(vec![vec![vec!["a", "b"]]], cover);
+    }
+
+    #[test]
+    fn set_with_missing_elements() {
+        let cover = super::exact_cover(vec!["a", "b", "c"], vec![vec![true, true, false]]);
+        assert_eq!(Vec::<Vec<Vec<&str>>>::new(), cover);
+    }
+
+    #[test]
+    fn disjoint_sets() {
+        let cover = super::exact_cover(
+            vec!["a", "b", "c", "d"],
+            vec![
+                vec![true, false, true, false],
+                vec![false, true, false, true]
+            ]
+        ).into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
+
+        let expected =vec![vec![
+            vec!["a", "c"],
+            vec!["b", "d"]
+        ]].into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())    
+            .collect::<Vec<_>>(); 
+
+        assert_eq!(expected, cover);
+    }
+
+    #[test]
+
+    fn no_solutions() {
+        let cover = super::exact_cover(
+            vec!["a", "b", "c", "d"],
+            vec![
+                vec![false, true, false, true],
+                vec![true, true, true, false]
+            ]
+        );
+
+        assert_eq!(Vec::<Vec<Vec<&str>>>::new(), cover);
+    }
+
+    #[test]
+    fn one_solution() {
+        let cover = super::exact_cover(
+            vec!["a", "b", "c", "d"],
+            vec![
+                vec![true, false, true, false],
+                vec![false, true, false, true],
+                vec![true, true, true, false]
+            ]
+        ).into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
+
+        let expected =vec![vec![
+            vec!["a", "c"],
+            vec!["b", "d"]
+        ]].into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>(); 
+
+        assert_eq!(expected, cover);
+    }
+
+    #[test]
+    fn one_solution_bigger() {
+        let elements = vec!["a", "b", "c", "d", "e", "f", "g"];
+        let sets = vec![
+            vec![false, false, true, false, true, true, false],
+            vec![true, false, false, true, false, false, true],
+            vec![false, true, true, false, false, true, false],
+            vec![true, false, false, true, false, false, false],
+            vec![false, true, false, false, false, false, true],
+            vec![false, false, false, true, true, false, true]
+        ];
+
+        let cover = super::exact_cover(elements, sets)
+            .into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
+
+        let expected = vec![vec![
+            vec!["a", "d"],
+            vec!["b", "g"],
+            vec!["c", "e", "f"]
+        ]].into_iter()
+            .into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(expected, cover);
+    }
+
+    #[test]
+    fn multiple_solutions() {
+        let elements = vec!["a", "b", "c", "d", "e"];
+        let sets = vec![
+            vec![true, false, false, false, false],
+            vec![false, true, true, true, true],
+            vec![true, true, false, false, false],
+            vec![false, false, true, true, true],
+            vec![false, false, false, true, true],
+            vec![false, true, true, false, false]
+        ];
+
+        let cover = super::exact_cover(elements, sets)
+            .into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
+
+        let expected = vec![
+            vec![
+                vec!["a"],
+                vec!["b", "c", "d", "e"]
+            ],
+            vec![
+                vec!["a", "b"],
+                vec!["c", "d", "e"]
+            ],
+            vec![
+                vec!["a"],
+                vec!["d", "e"],
+                vec!["b", "c"],
+            ]
+        ].into_iter()
+            .map(|res| res.into_iter().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(expected, cover);
+    }
 }
 
