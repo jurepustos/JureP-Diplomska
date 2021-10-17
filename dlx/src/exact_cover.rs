@@ -1,51 +1,67 @@
-pub struct CoverMatrix<'a> {
-    _private: (),
-    column_names: Vec<&'a str>,
-    rows: Vec<Row>
-}
-
 struct Row {
     name: usize,
     array: Vec<bool>
 }
 
-impl<'a> CoverMatrix<'a> {
-    pub fn from(elements: Vec<&'a str>, sets: Vec<Vec<bool>>) -> CoverMatrix {
-        let rows = sets
-            .into_iter()
-            .enumerate()
-            .map(|(i, set)| Row { name: i, array: set })
-            .collect::<Vec<Row>>();
-        
-        CoverMatrix {
-            _private: (),
-            column_names: elements,
-            rows
-        }
-    }
 
-    pub fn exact_cover(self: &CoverMatrix<'a>) -> Vec<Vec<Vec<&'a str>>> {
-        let mut set_solutions = Vec::new();
-    
-        let row_sets = row_solutions(&self.rows);
-        for row_set in row_sets {
-            let mut solution: Vec<Vec<&'a str>> = Vec::new();
-            for row in row_set {
-                let mut column_set: Vec<&'a str> = Vec::new();
-                for (i, &element) in self.rows[row].array.iter().enumerate() {
-                    if element == true {
-                        column_set.push(self.column_names[i]);
-                    }
-                }
-                solution.push(column_set);
-            }
-            set_solutions.push(solution);
-        }
+pub fn exact_cover<'a>(elements: Vec<&'a str>, sets: Vec<Vec<bool>>) -> Vec<Vec<Vec<&'a str>>> {
+    let rows = sets
+        .into_iter()
+        .enumerate()
+        .map(|(i, set)| make_row(elements.len(), i, set))
+        .collect::<Vec<Row>>();
 
-        set_solutions
-    }
+    let row_sets = row_solutions(&rows);
+
+    set_solutions(&rows, &elements, &row_sets)
 }
 
+fn make_row(num_of_elements: usize, index: usize, set: Vec<bool>) -> Row {
+    let mut set = set;
+    if set.len() > num_of_elements {
+        for _i in 0..(set.len()-num_of_elements) {
+            set.pop();
+        }
+    }
+    
+    if set.len() < num_of_elements {
+        for _i in 0..(num_of_elements-set.len()) {
+            set.push(false);
+        }
+    }
+
+    Row { name: index, array: set }
+}
+
+fn set_solutions<'a>(matrix: &Vec<Row>, 
+                    elements: &Vec<&'a str>, 
+                    row_sets: &Vec<Vec<usize>>) -> Vec<Vec<Vec<&'a str>>> {
+    
+    let mut solutions = Vec::new();
+    for row_set in row_sets {
+        let mut solution: Vec<Vec<&'a str>> = Vec::new();
+        for &row in row_set {
+            solution.push(column_set(matrix, elements, row));
+        }
+        solutions.push(solution);
+    }
+
+    solutions
+}
+
+fn column_set<'a>(matrix: &Vec<Row>, 
+                elements: &Vec<&'a str>, 
+                selected_row: usize) -> Vec<&'a str> {
+
+    let mut columns: Vec<&'a str> = Vec::new();
+    for (i, &element) in matrix[selected_row].array.iter().enumerate() {
+        if element == true {
+            columns.push(elements[i]);
+        }
+    }
+
+    columns
+}
 
 fn row_solutions(matrix: &Vec<Row>) -> Vec<Vec<usize>> {
     if matrix.len() == 0 {

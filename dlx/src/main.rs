@@ -1,6 +1,6 @@
 mod exact_cover;
 
-use exact_cover::CoverMatrix;
+use exact_cover::exact_cover;
 
 fn main() {
     println!("Hello, world!");
@@ -15,8 +15,7 @@ fn main() {
         vec![false, false, false, true, true, false, true]
     ]; 
 
-    let matrix = CoverMatrix::from(elements, sets);
-    let cover_set = matrix.exact_cover();
+    let cover_set = exact_cover(elements, sets);
     for cover in cover_set {
         let mut format = String::new();
         for set in cover {
