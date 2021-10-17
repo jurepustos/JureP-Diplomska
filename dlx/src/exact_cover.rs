@@ -24,23 +24,25 @@ impl<'a> CoverMatrix<'a> {
         }
     }
 
-    pub fn exact_cover(self: &CoverMatrix<'a>) -> Vec<Vec<&'a str>> {
+    pub fn exact_cover(self: &CoverMatrix<'a>) -> Vec<Vec<Vec<&'a str>>> {
         let mut set_solutions = Vec::new();
     
-        let row_solutions = row_solutions(&self.rows);
-        for row_solution in row_solutions {
-            let mut str_solutions = Vec::new();
-            for row_name in row_solution.into_iter() {
-                let element_indices = true_indices(&self.rows[row_name].array);
-                for index in element_indices {
-                    str_solutions.push(self.column_names[index]);
+        let row_sets = row_solutions(&self.rows);
+        for row_set in row_sets {
+            let mut solution: Vec<Vec<&'a str>> = Vec::new();
+            for row in row_set {
+                let mut column_set: Vec<&'a str> = Vec::new();
+                for (i, &element) in self.rows[row].array.iter().enumerate() {
+                    if element == true {
+                        column_set.push(self.column_names[i]);
+                    }
                 }
+                solution.push(column_set);
             }
-    
-            set_solutions.push(str_solutions);
+            set_solutions.push(solution);
         }
-    
-        return set_solutions
+
+        set_solutions
     }
 }
 
@@ -50,10 +52,9 @@ fn row_solutions(matrix: &Vec<Row>) -> Vec<Vec<usize>> {
         Vec::new()
     }
     else if matrix.len() == 1 {
-        let row = &matrix[0].array;
-        if row.iter().all(|val| *val == true) {
-            let name = matrix[0].name;
-            return vec![vec![name]]
+        let row = &matrix[0];
+        if row.array.iter().all(|val| *val == true) {
+            vec![vec![row.name]]
         }
         else {
             Vec::new()
@@ -68,11 +69,10 @@ fn row_solutions(matrix: &Vec<Row>) -> Vec<Vec<usize>> {
             
         for &selected_row in select_rows.iter() {
             let row = &matrix[selected_row].array;
-            let row_len = row.len();
-            let cols_range: Vec<usize> = (0..row_len).collect();
+            let cols_range: Vec<usize> = (0..row.len()).collect();
             let remove_cols = true_indices(row);
+            
             let remaining_cols = diff(&cols_range, &remove_cols);
-
             let remaining_rows = covered_rows(&matrix, &remove_cols);
 
             let submatrix = gensubmatrix(&matrix, &remaining_rows, &remaining_cols);
@@ -82,7 +82,7 @@ fn row_solutions(matrix: &Vec<Row>) -> Vec<Vec<usize>> {
             push_to(&mut solutions, subresults);
         }
 
-        return solutions
+        solutions
     }
 }
 
@@ -91,37 +91,36 @@ fn gen_row_subresults(matrix: &Vec<Row>, row_name: usize) -> Vec<Vec<usize>> {
     for result in subresults.iter_mut() {
         result.push(row_name);
     }
-    return subresults
+    
+    subresults
 }
 
 fn push_to(dest: &mut Vec<Vec<usize>>, source: Vec<Vec<usize>>) {
     let mut array = source;
     while array.len() > 0 {
-        match array.pop() {
-            Some(res) => {
-                dest.push(res);
-            },
-            None => ()
-        };
+        if let Some(res) = array.pop() {
+            dest.push(res);
+        }
     }
 }
 
-fn covered_rows(matrix: &Vec<Row>, cols: &[usize]) -> Vec<usize> {
+fn covered_rows(matrix: &Vec<Row>, covered_cols: &[usize]) -> Vec<usize> {
     let mut remaining_rows: Vec<usize> = (0..matrix.len()).collect();
-    for &col in cols {
-        let mut remove_rows: Vec<usize> = Vec::new();
-        for &row in &remaining_rows {
-            if matrix[row].array[col] == true {
-                remove_rows.push(row);
-            }
-        }
+    for &col in covered_cols {
+        let remove_rows = remaining_rows
+            .iter()
+            .enumerate()
+            .filter(|(_i, row)| matrix[**row].array[col] == true)
+            .map(|(i, _row)| i)
+            .rev()
+            .collect::<Vec<usize>>();
         
         for &index in &remove_rows {
             remaining_rows.remove(index);
         }
     }
 
-    return remaining_rows
+    remaining_rows
 }
 
 fn true_indices(array: &[bool]) -> Vec<usize> {
@@ -144,7 +143,7 @@ fn gensubmatrix(matrix: &Vec<Row>, rows: &[usize], cols: &[usize]) -> Vec<Row> {
         submatrix.push(Row { name: row_name, array: new_row });
     }
 
-    return submatrix
+    submatrix
 }
 
 fn diff(array1: &[usize], array2: &[usize]) -> Vec<usize> {
