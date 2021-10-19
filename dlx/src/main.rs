@@ -1,6 +1,7 @@
-mod exact_cover;
+// mod exact_cover;
+mod exact_cover2;
 
-use exact_cover::exact_cover;
+use exact_cover2::exact_cover;
 
 fn main() {
     println!("Hello, world!");
@@ -15,13 +16,16 @@ fn main() {
         vec![false, false, false, true, true, false, true]
     ]; 
 
-    let cover_set = exact_cover(elements, sets);
+    let cover_set = exact_cover(&sets);
+    println!("{}", cover_set.len());
     for cover in cover_set {
         let mut format = String::new();
         for set in cover {
-            for element in set {
-                format.push_str(element);
-                format.push(' ');
+            for (i, &val) in set.iter().enumerate() {
+                if val {
+                    format.push_str(elements[i]);
+                    format.push(' ');
+                }
             }
             format.push('\n');
         }
