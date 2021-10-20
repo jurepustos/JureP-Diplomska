@@ -1,10 +1,11 @@
 // mod exact_cover;
 mod exact_cover2;
 
-use exact_cover2::exact_cover;
+use exact_cover2::{exact_cover};
 
 fn main() {
     println!("Hello, world!");
+
 
     let elements = vec!["a", "b", "c", "d", "e", "f", "g"];
     let sets = vec![
