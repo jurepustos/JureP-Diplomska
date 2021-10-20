@@ -29,7 +29,7 @@ fn set_slices<'a>(sets: &[Set<'a>]) -> Vec<&'a [bool]> {
 // Finds all exact covers of the given sets 
 // and returns references to sets in each cover
 fn find_covers<'a>(sets: &[Set<'a>]) -> Vec<Vec<Set<'a>>> {
-    if sets.is_empty(){
+    if sets.is_empty() {
         Vec::new()
     }
     else if sets.len() == 1 {
@@ -126,7 +126,7 @@ fn set_refs(sets: &[(Label, Vec<bool>)]) -> Vec<Set> {
 
 // Returns indices of elements included in the given set
 pub fn set_elements(set: Set) -> Vec<Element> {
-    let (i, slice) = set;
+    let (_i, slice) = set;
     slice.iter()
         .enumerate()
         .filter(|(_i, &val)| val)
@@ -139,15 +139,20 @@ pub fn set_elements(set: Set) -> Vec<Element> {
 pub fn cover<'a>(sets: &[Set<'a>], cover_set: Set<'a>) -> Vec<(Label, Vec<bool>)> {
     let cover_elements = set_elements(cover_set);
     sets.into_iter()
-        .filter(|(_i, set)|
-            cover_elements
-                .iter()
-                .all(|&elem| !get_bool(&set, elem)))
-        .map(|(i, set)| 
-            (*i, set.iter()
-                .filter(|&&val| val)
-                .map(|&val| val)
-                .collect()))
+        .filter(|&(_i, set)| !contains_any(&set, &cover_elements))
+        .map(|&(i, set)| (i, set_reduce(&set)))
+        .collect()
+}
+
+fn contains_any(set: &[bool], elements: &[Element]) -> bool {
+    elements.iter()
+        .any(|&elem| get_bool(&set, elem))
+}
+
+fn set_reduce(set: &[bool]) -> Vec<bool> {
+    set.iter()
+        .filter(|&&val| val)
+        .map(|&val| val)
         .collect()
 }
 
@@ -285,17 +290,15 @@ mod tests {
     }
 
     #[test]
-    fn multiple_solutions() {
+    fn multiple_solutions_simple() {
         let sets = vec![
-            vec![true, false, false, false, false],
-            vec![false, true, true, true, true],
-            vec![true, true, false, false, false],
-            vec![false, false, true, true, true],
-            vec![false, false, false, true, true],
-            vec![false, true, true, false, false]
+            vec![true, false, true, false],
+            vec![false, true, false, true],
+            vec![true, true, false, false],
+            vec![false, false, true, true]
         ];
 
-        let cover = super::exact_cover(&sets);   
+        let cover = super::exact_cover(&sets);
 
         let expected = vec![
             vec![
@@ -305,7 +308,47 @@ mod tests {
             vec![
                 &sets[2],
                 &sets[3]
+            ]
+        ];
+
+        assert_eq!(expected, cover);
+    }
+
+    #[test]
+    fn multiple_solutions() {
+        let sets = vec![
+            // 0: 0
+            vec![true, false, false, false, false],
+            // 1: 1 2 3 4
+            vec![false, true, true, true, true],
+            // 2: 0 1
+            vec![true, true, false, false, false],
+            // 3: 2 3 4
+            vec![false, false, true, true, true],
+            // 4: 3 4
+            vec![false, false, false, true, true],
+            // 5: 1 2
+            vec![false, true, true, false, false]
+        ];
+
+        let cover = super::exact_cover(&sets);   
+
+        let expected = vec![
+            // 0
+            // 1 2 3 4
+            vec![
+                &sets[0],
+                &sets[1]
             ],
+            // 0 1
+            // 2 3 4
+            vec![
+                &sets[2],
+                &sets[3]
+            ],
+            // 0
+            // 3 4
+            // 1 2
             vec![
                 &sets[0],
                 &sets[4],
