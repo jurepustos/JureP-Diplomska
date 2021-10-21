@@ -42,7 +42,7 @@ fn find_covers<'a>(sets: &[Set<'a>]) -> Vec<Vec<Set<'a>>> {
     }
     else {
         match least_sets_element(&sets) {
-            None => Vec::new(),
+            None => vec![Vec::from(sets) ],
             Some(selected_elem) => find_associated_covers(sets, selected_elem)
         }
     }
@@ -67,22 +67,14 @@ fn find_associated_covers<'a>(sets: &[Set<'a>], elem: Element) -> Vec<Vec<Set<'a
 
 // Returns the length of the biggest given slice
 fn count_all_elements(sets: &[Set]) -> usize {
-    if sets.is_empty() {
-        0
-    }
-    else {
-        sets.iter()
-            .map(|(_i, set)| set.len())
-            .max()
-            .unwrap()
-    }
-}
+    let max_opt = sets.iter()
+        .map(|(_i, set)| set.len())
+        .max();
 
-// Returns the number of true values in the slice
-fn count_elements(set: &[bool]) -> usize {
-    set.iter()
-        .filter(|&&val| val)
-        .count()
+    match max_opt {
+        Some(max) => max,
+        None => 0
+    }
 }
 
 // Returns true if the element at the given index is true. 
@@ -140,7 +132,8 @@ pub fn cover<'a>(sets: &[Set<'a>], cover_set: Set<'a>) -> Vec<(Label, Vec<bool>)
     let cover_elements = set_elements(cover_set);
     sets.into_iter()
         .filter(|&(_i, set)| !contains_any(&set, &cover_elements))
-        .map(|&(i, set)| (i, set_reduce(&set)))
+        .map(|&(i, set)| (i, set_reduce(&set, &cover_elements)))
+        // .filter(|(i, set)| *i == cover_set.0 || !set.is_empty())
         .collect()
 }
 
@@ -149,10 +142,11 @@ fn contains_any(set: &[bool], elements: &[Element]) -> bool {
         .any(|&elem| get_bool(&set, elem))
 }
 
-fn set_reduce(set: &[bool]) -> Vec<bool> {
+fn set_reduce(set: &[bool], elements: &[Element]) -> Vec<bool> {
     set.iter()
-        .filter(|&&val| val)
-        .map(|&val| val)
+        .enumerate()
+        .filter(|&(i, _val)| !elements.contains(&i))
+        .map(|(_i, &val)| val)
         .collect()
 }
 
@@ -281,9 +275,9 @@ mod tests {
         // 0 3
         // 1 6
         let expected = vec![vec![
-            &sets[0],
             &sets[3],
-            &sets[4]
+            &sets[4],
+            &sets[0]
         ]];
 
         assert_eq!(expected, cover);
