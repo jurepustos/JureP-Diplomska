@@ -1,29 +1,7 @@
 use std::collections::HashSet;
 
-enum NodeType {
-    Root,
-    Header,
-    Element
-}
-
-struct Header {
-    element: String,
-    node: usize,
-    len: usize
-}
-
-impl Header {
-    fn new(elem: String, node_index: usize) -> Self {
-        Header {
-            element: elem,
-            node: node_index,
-            len: 0
-        }
-    }
-}
-
+#[derive(Clone,Copy,PartialEq,Eq)]
 struct Node {
-    // node_type: NodeType,
     header: usize,
     up: usize,
     down: usize,
@@ -35,7 +13,6 @@ struct Node {
 impl Node {
     fn root() -> Self {
         Node {
-            // node_type: NodeType::Root,
             header: 0,
             up: 0,
             down: 0,
@@ -47,7 +24,6 @@ impl Node {
 
     fn header(index: usize, length: usize) -> Self {
         Node {
-            // node_type: NodeType::Header,
             header: index,
             up: index,
             down: index,
@@ -58,9 +34,8 @@ impl Node {
     }
 
     fn element(header: usize, up: usize, offset: usize, 
-        prev: usize, current: usize, elem_count: usize) {
+        prev: usize, current: usize, elem_count: usize) -> Self {
             Node {
-                // node_type: NodeType::Element,
                 header: header,
                 up,
                 down: header,
@@ -71,10 +46,9 @@ impl Node {
     }
 }
 
-
+#[derive(Clone,PartialEq,Eq)]
 struct DLXTable {
-    // headers: Vec<Header>,
-    elements: Vec<String>
+    elements: Vec<String>,
     nodes: Vec<Node>
 }
 
@@ -82,7 +56,7 @@ struct DLXTable {
 impl DLXTable {
     fn new() -> Self {
         DLXTable { 
-            headers: vec![], 
+            elements: vec![], 
             nodes: vec![Node::root()] 
         }
     }
@@ -110,7 +84,7 @@ impl DLXTable {
     }
 
     fn create_headers(&mut self) {
-        let length = elements.len();
+        let length = self.elements.len();
         for i in 0..length {
             self.nodes.push(Node::header(i+1, length));
             let elem = self.elements[i].to_owned();
@@ -149,29 +123,30 @@ impl DLXTable {
         }
     }
 
+
     pub fn cover_element(&mut self, elem_index: usize) {
-        if elem_index < self.elements.len() {
-            self.hide_element(elem_index);
-            for node_index in self.element_nodes(elem_index) {
+        let header_index = elem_index+1;
+        if header_index <= self.elements.len() {
+            self.hide_element(header_index);
+            for node_index in self.element_nodes(header_index) {
                 self.hide_row(node_index);
             }
         }
     }
 
-    fn hide_element(&mut self, elem_index: usize) {
-        if elem_index < self.elements.len() {
-            let header_node = &self.nodes[elem_index+1];
+    fn hide_element(&mut self, header_index: usize) {
+        if header_index <= self.elements.len() {
+            let header_node = &self.nodes[header_index];
             let mut left_node = &mut self.nodes[header_node.left];
-            let mut right_node = &mut self.node[header_node.right];
+            let mut right_node = &mut self.nodes[header_node.right];
             left_node.right = header_node.right;
             right_node.left = header_node.left;
         }
     }
 
-    fn element_nodes(&self, elem_index: usize) -> Vec<usize> {
+    fn element_nodes(&mut self, header_index: usize) -> Vec<usize> {
         let mut indices = Vec::new();
-        if elem_index < self.elements.len() {
-            let header_index = elem_index+1;
+        if header_index <= self.elements.len() {
             let mut next_node = &self.nodes[header_index];
             while next_node.down != header_index {
                 indices.push(next_node.down);
@@ -182,7 +157,7 @@ impl DLXTable {
         indices
     }
 
-    fn row_nodes(&self, node_index: usize) -> Vec<usize> {
+    fn row_nodes(&mut self, node_index: usize) -> Vec<usize> {
         let mut indices = Vec::new();
         if let Some(start_node) = self.nodes.get_mut(node_index) {
             let mut next_node = start_node;
@@ -207,7 +182,6 @@ impl DLXTable {
         }
     }
 
-    // TODO: not correctly implemented yet
     pub fn cover_row(&mut self, node_index: usize) {
         for index in self.row_nodes(node_index) {
             let node = &self.nodes[index];
@@ -216,15 +190,48 @@ impl DLXTable {
     }
 
     pub fn uncover_element(&mut self, elem_index: usize) {
+        let header_index = elem_index+1;
+        if header_index <= self.elements.len() {
+            self.unhide_element(header_index);
+            for &node_index in self.element_nodes(header_index).iter().rev() {
+                self.unhide_row(node_index);
+            }
+        }
+    }
 
+    fn unhide_element(&mut self, header_index: usize) {
+        if header_index <= self.elements.len() {
+            let mut header_node = &mut self.nodes[header_index];
+            let mut left_node = &mut self.nodes[header_node.left];
+            let mut right_node = &mut self.nodes[header_node.right];
+
+            left_node.right = header_index;
+            right_node.left = header_index;
+        }
+    }
+
+    fn unhide_row(&mut self, node_index: usize) {
+        for &index in self.row_nodes(node_index).iter().rev() {
+            let mut node = &mut self.nodes[index];
+            let mut up_node = &mut self.nodes[node.up];
+            let mut down_node = &mut self.nodes[node.down];
+            let mut header_node = &mut self.nodes[node.header];
+
+            up_node.down = node_index;
+            down_node.up = node_index;
+            header_node.len += 1;
+        }
     }
 
     pub fn uncover_row(&mut self, node_index: usize) {
-
+        for &index in self.row_nodes(node_index).iter().rev() {
+            let node = &self.nodes[index];
+            self.uncover_element(node.header-1);
+        }
     }
 
     fn node_visible(&self, node_index: usize) -> bool {
-        if let Some(node) = &self.nodes.get(node_index) {
+        if let Some(node) = self.nodes.get(node_index) {
             let left_node = &self.nodes[node.left];
             let right_node = &self.nodes[node.right];
             let up_node = &self.nodes[node.up];
