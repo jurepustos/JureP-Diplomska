@@ -1,11 +1,15 @@
 // mod exact_cover;
-mod exact_cover2;
+// mod exact_cover2;
+mod dlx_table;
+mod exact_cover;
 
-use exact_cover2::{exact_cover};
+use dlx_table::{DLXTable};
+use exact_cover::{exact_cover};
 
 fn main() {
     println!("Hello, world!");
 
+    let table = DLXTable::from(Vec::new());
 
     let elements = vec!["a", "b", "c", "d", "e", "f", "g"];
     let sets = vec![
