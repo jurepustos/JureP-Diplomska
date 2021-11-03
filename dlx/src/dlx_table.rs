@@ -92,21 +92,20 @@ impl DLXTable {
         table
     }
 
-    pub fn get_elements(&self) -> Vec<Element> {
-        let mut elems = Vec::new();
-        for (i, elem) in self.elements.iter().enumerate() {
-            let header_node = self.nodes[i+1];
-            elems.push(Element {
-                name: &elem,
-                len: header_node.len
-            });
-        }
-
-        elems
+    pub fn element_names(&self) -> &Vec<String> {
+        &self.elements
     }
 
-    pub fn element_count(&self) -> usize {
-        self.elements.len()
+    pub fn get_elements(&self) -> Vec<usize> {
+        let mut elements = Vec::new();
+        let mut node = &self.nodes[0];
+        while node.right != 0 {
+            let index = node.right;
+            elements.push(index);
+            node = &self.nodes[node.right];
+        }
+
+        elements
     }
 
     fn create_headers(&mut self) {
@@ -180,12 +179,18 @@ impl DLXTable {
         }
     }
 
-    pub fn element_nodes(&mut self, elem_index: usize) -> Vec<usize> {
+    pub fn element_nodes_count(&self, elem_index: usize) -> usize {
+        let header_index = elem_index+1;
+        let header_node = self.nodes[header_index];
+        header_node.len
+    }
+
+    pub fn element_nodes(&self, elem_index: usize) -> Vec<usize> {
         let header_index = elem_index+1;
         self.header_child_nodes(header_index)
     }
 
-    fn header_child_nodes(&mut self, header_index: usize) -> Vec<usize> {
+    fn header_child_nodes(&self, header_index: usize) -> Vec<usize> {
         let mut indices = Vec::new();
         if header_index <= self.elements.len() {
             let mut next_node = &self.nodes[header_index];
