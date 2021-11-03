@@ -163,8 +163,10 @@ impl DLXTable {
             let header_node = &self.nodes[header_index];
             let left = header_node.left;
             let right = header_node.right;
+
             let mut left_node = &mut self.nodes[left];
             left_node.right = right;
+
             let mut right_node = &mut self.nodes[right];
             right_node.left = left;
         }
@@ -180,11 +182,12 @@ impl DLXTable {
             }
         }
 
+        indices.sort();
         indices
     }
 
-    fn row_nodes(&mut self, node_index: usize) -> Vec<usize> {
-        let mut indices = Vec::new();
+    fn row_nodes(&self, node_index: usize) -> Vec<usize> {
+        let mut indices = vec![node_index];
         if let Some(start_node) = self.nodes.get(node_index) {
             let mut next_node = start_node;
             while next_node.right != node_index {
@@ -193,29 +196,37 @@ impl DLXTable {
             }
         }
 
+        indices.sort();
         indices
     }
 
     fn hide_row(&mut self, node_index: usize) {
         for index in self.row_nodes(node_index) {
-            let node = &self.nodes[index];
-            let up = node.up;
-            let down = node.down;
-            let header = node.header;
-            let mut up_node = &mut self.nodes[up];
-            up_node.down = down;
-            let mut down_node = &mut self.nodes[down];
-            down_node.up = up;
-            let mut header_node = &mut self.nodes[header];
-            header_node.len -= 1;
+            if index != node_index {
+                let node = &self.nodes[index];
+                let up = node.up;
+                let down = node.down;
+                let header = node.header;
+    
+                let mut up_node = &mut self.nodes[up];
+                up_node.down = down;
+    
+                let mut down_node = &mut self.nodes[down];
+                down_node.up = up;
+    
+                let mut header_node = &mut self.nodes[header];
+                header_node.len -= 1;
+            }
         }
     }
 
     pub fn cover_row(&mut self, node_index: usize) {
         for index in self.row_nodes(node_index) {
-            let node = &self.nodes[index];
-            let elem_index = node.header-1;
-            self.cover_element(elem_index);
+            if index != node_index {
+                let node = &self.nodes[index];
+                let elem_index = node.header-1;
+                self.cover_element(elem_index);
+            }
         }
     }
 
@@ -790,18 +801,68 @@ mod tests {
     }
 
     #[cfg(test)]
+    mod row_nodes {
+        use super::*;
+        use super::super::*;
+
+        #[test]
+        fn one_element() {
+            let sets = vec![
+                vec!["a"]
+            ];
+            let table = DLXTable::from(sets);
+
+            assert_eq!(1, table.row_nodes(2).len());
+        }
+
+        #[test]
+        fn counts_all_elements() {
+            let table = create_table();
+            let first_row_index = 8;
+            let second_row_index = 12;
+
+            let first_row_nodes = table.row_nodes(first_row_index);
+            let second_row_nodes = table.row_nodes(second_row_index);
+            assert_eq!(3, first_row_nodes.len());
+            assert_eq!(3, second_row_nodes.len());
+        }
+
+        #[test]
+        fn finds_all_elements() {
+            let table = create_table();
+            let first_row_index = 8;
+            let second_row_index = 12;
+
+            let first_row_nodes = table.row_nodes(first_row_index);
+            let expected = vec![8,9,10];
+            assert_eq!(expected, first_row_nodes);
+            
+            let second_row_nodes = table.row_nodes(second_row_index);
+            let expected = vec![11,12,13];
+            assert_eq!(expected, second_row_nodes);
+        }
+    }
+
+    #[cfg(test)]
     mod cover_element {
         use super::*;
         use super::super::*;
 
         #[test]
-        fn header_is_unchanged() {
+        fn header_unchanged() {
             let mut table = create_table();
-            table.cover_element(0);
-
             let header_node = table.nodes[1];
-            assert_eq!(0, header_node.left);
-            assert_eq!(2, header_node.right);
+            let up_before = header_node.up;
+            let down_before = header_node.down; 
+
+            table.cover_element(0);
+            let header_node = table.nodes[1];
+            
+            let up_after = header_node.up;
+            assert_eq!(up_before, up_after);
+            
+            let down_after = header_node.down;
+            assert_eq!(down_before, down_after);
         }
 
         #[test]
@@ -819,6 +880,36 @@ mod tests {
             assert_eq!(right, left_node.right);
             assert_eq!(left, right_node.left);
         }
+
+        #[test]
+        fn element_nodes_unchanged() {
+            let mut table = create_table();
+            let element_nodes_before = table.element_nodes(1);
+            table.cover_element(0);
+            let element_nodes_after = table.element_nodes(1);
+
+            assert_eq!(element_nodes_before, element_nodes_after);
+        }
+
+        #[test]
+        fn rows_disconnected() {
+            let mut table = create_table();
+            table.cover_element(0);
+
+            for node_index in table.element_nodes(1) {
+                for row_node_index in table.row_nodes(node_index) {
+                    if row_node_index != node_index {
+                        let node = table.nodes[row_node_index];
+                        
+                        let up_node = table.nodes[node.up];
+                        assert_ne!(up_node.down, row_node_index);
+                        
+                        let down_node = table.nodes[node.down];
+                        assert_ne!(down_node.up, row_node_index);
+                    }
+                }
+            }
+        }
     }
 
     #[cfg(test)]
@@ -833,8 +924,6 @@ mod tests {
             table.uncover_element(0);
 
             let header_node = table.nodes[1];
-            // let left = header_node.left;
-            // let right = header_node.right;
             assert_eq!(0, header_node.left);
             assert_eq!(2, header_node.right);
         }
