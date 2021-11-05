@@ -77,11 +77,8 @@ impl DLXTable {
         }
     }
 
-    pub fn from(sets: Vec<Vec<&str>>) -> Self {
+    pub fn from(sets: &Vec<Vec<&str>>) -> Self {
         let mut sets = sets;
-        for set in sets.iter_mut() {
-            set.sort();
-        }
         let elements: Vec<String> = set_elements(&sets);
         let mut table = Self::with_capacity(elements, sets.len());
         table.create_headers();
@@ -96,18 +93,31 @@ impl DLXTable {
         &self.elements
     }
 
-    pub fn get_elements(&self) -> Vec<usize> {
-        let mut elements = Vec::new();
+    pub fn header_nodes(&self) -> Vec<usize> {
+        let mut indices = Vec::new();
         let mut node = &self.nodes[0];
         while node.right != 0 {
             let index = node.right;
-            elements.push(index);
-            node = &self.nodes[node.right];
+            indices.push(index);
+            node = &self.nodes[index];
         }
 
-        elements
+        indices
     }
 
+    pub fn has_sets(&self) -> bool {
+        let root = self.nodes[0];
+        if root.right != 0 {
+            let header_nodes = self.header_nodes();
+            header_nodes
+                .into_iter()
+                .any(|index| self.nodes[index].len != 0)
+        }
+        else {
+            false
+        }
+    }
+    
     fn create_headers(&mut self) {
         let length = self.elements.len();
         for i in 0..length {
@@ -156,7 +166,7 @@ impl DLXTable {
         self.cover_header(header_index);
     }
 
-    fn cover_header(&mut self, header_index: usize) {
+    pub fn cover_header(&mut self, header_index: usize) {
         if header_index <= self.elements.len() {
             self.hide_element(header_index);
             for node_index in self.header_child_nodes(header_index) {
@@ -190,13 +200,14 @@ impl DLXTable {
         self.header_child_nodes(header_index)
     }
 
-    fn header_child_nodes(&self, header_index: usize) -> Vec<usize> {
+    pub fn header_child_nodes(&self, header_index: usize) -> Vec<usize> {
         let mut indices = Vec::new();
         if header_index <= self.elements.len() {
             let mut next_node = &self.nodes[header_index];
             while next_node.down != header_index {
                 indices.push(next_node.down);
-                next_node = &self.nodes[next_node.down];
+                let down = next_node.down;
+                next_node = &self.nodes[down];
             }
         }
 
@@ -210,12 +221,26 @@ impl DLXTable {
             let mut next_node = start_node;
             while next_node.right != node_index {
                 indices.push(next_node.right);
-                next_node = &self.nodes[next_node.right];
+                let right = next_node.right;
+                next_node = &self.nodes[right];
             }
         }
 
         indices.sort();
         indices
+    }
+
+    pub fn row_elements(&self, node_index: usize) -> Vec<usize> {
+        let mut elem_indices = Vec::new();
+        let row_nodes = self.row_nodes(node_index);
+        for node_index in row_nodes {
+            let node = self.nodes[node_index];
+            let elem_index = node.header - 1;
+            elem_indices.push(elem_index);
+        } 
+
+        elem_indices.sort();
+        elem_indices
     }
 
     fn hide_row(&mut self, node_index: usize) {
@@ -253,7 +278,7 @@ impl DLXTable {
         self.uncover_header(header_index);
     }
 
-    fn uncover_header(&mut self, header_index: usize) {
+    pub fn uncover_header(&mut self, header_index: usize) {
         if header_index <= self.elements.len() {
             self.unhide_element(header_index);
             for &node_index in self.element_nodes(header_index).iter().rev() {
@@ -351,7 +376,7 @@ mod tests {
             vec!["d", "e", "g"]
         ];
 
-        DLXTable::from(sets)
+        DLXTable::from(&sets)
     }
 
     #[cfg(test)]
@@ -361,7 +386,7 @@ mod tests {
         #[test]
         fn no_sets() {
             let empty: Vec<Vec<&str>> = vec![];
-            let table = DLXTable::from(empty);
+            let table = DLXTable::from(&empty);
     
             let expected = DLXTable::new();
             assert_eq!(expected, table);
@@ -370,7 +395,7 @@ mod tests {
         #[test]
         fn empty_set() {
             let empty: Vec<Vec<&str>> = vec![vec![]];
-            let table = DLXTable::from(empty);
+            let table = DLXTable::from(&empty);
     
             let expected = DLXTable::new();
             assert_eq!(expected, table);
@@ -379,7 +404,7 @@ mod tests {
         #[test]
         fn one_element() {
             let sets: Vec<Vec<&str>> = vec![vec!["a"]];
-            let table = DLXTable::from(sets);
+            let table = DLXTable::from(&sets);
     
             let root = Node {
                 header: 0,
@@ -416,7 +441,7 @@ mod tests {
         #[test]
         fn one_set() {
             let sets = vec![vec!["a", "b", "c", "d"]];
-            let table = DLXTable::from(sets);
+            let table = DLXTable::from(&sets);
 
             let elements = vec![
                 "a".to_string(), 
@@ -525,7 +550,7 @@ mod tests {
                 vec!["a", "c", "e"],
                 vec!["b", "d", "f"]
             ];
-            let table = DLXTable::from(sets);
+            let table = DLXTable::from(&sets);
 
             let elements = vec![
                 "a".to_string(), 
@@ -670,10 +695,10 @@ mod tests {
         fn multiple_solutions() {
             let sets = vec![
                 vec!["a", "c", "e"],
-                vec!["a", "c", "b"],
+                vec!["a", "b", "c"],
                 vec!["d", "e"]
             ];
-            let table = DLXTable::from(sets);
+            let table = DLXTable::from(&sets);
 
             let elements = vec![
                 "a".to_string(), 
@@ -834,7 +859,7 @@ mod tests {
             let sets = vec![
                 vec!["a"]
             ];
-            let table = DLXTable::from(sets);
+            let table = DLXTable::from(&sets);
 
             assert_eq!(1, table.row_nodes(2).len());
         }
