@@ -13,7 +13,8 @@ struct Node {
     down: usize,
     left: usize,
     right: usize,
-    len: usize
+    len: Option<usize>,
+    set_index: Option<usize>
 }
 
 impl Node {
@@ -24,7 +25,8 @@ impl Node {
             down: 0,
             left: 0,
             right: 0,
-            len: 0
+            len: None,
+            set_index: None
         }
     }
 
@@ -35,27 +37,17 @@ impl Node {
             down: index,
             left: index-1,
             right: (index+1) % (length+1),
-            len: 0
+            len: Some(0),
+            set_index: None
         }
-    }
-
-    fn element(header: usize, up: usize, offset: usize, 
-        prev: usize, current: usize, elem_count: usize) -> Self {
-            Node {
-                header: header,
-                up,
-                down: header,
-                left: offset + prev,
-                right: offset + ((current+1) % elem_count),
-                len: 0
-            }
     }
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct DLXTable {
     elements: Vec<String>,
-    nodes: Vec<Node>
+    nodes: Vec<Node>,
+    sets_count: usize
 }
 
 
@@ -63,7 +55,8 @@ impl DLXTable {
     pub fn new() -> Self {
         DLXTable { 
             elements: vec![], 
-            nodes: vec![Node::root()] 
+            nodes: vec![Node::root()],
+            sets_count: 0
         }
     }
 
@@ -73,12 +66,12 @@ impl DLXTable {
         
         DLXTable { 
             elements, 
-            nodes: nodes
+            nodes: nodes,
+            sets_count: 0
         }
     }
 
     pub fn from(sets: &Vec<Vec<&str>>) -> Self {
-        let mut sets = sets;
         let elements: Vec<String> = set_elements(&sets);
         let mut table = Self::with_capacity(elements, sets.len());
         table.create_headers();
@@ -111,7 +104,7 @@ impl DLXTable {
             let header_nodes = self.header_nodes();
             header_nodes
                 .into_iter()
-                .any(|index| self.nodes[index].len != 0)
+                .any(|index| self.nodes[index].len != Some(0))
         }
         else {
             false
@@ -144,19 +137,33 @@ impl DLXTable {
                 if let Some(elem_index) = op_index {
                     let header_index = elem_index+1;
                     let mut header_node = &mut self.nodes[header_index];
-                    let up_index = header_node.up;
+                    let up = header_node.up;
                     header_node.up = offset + current_index;
-                    header_node.len += 1;
+                    let len = header_node.len.unwrap();
+                    header_node.len = Some(len+1);
     
-                    let mut up_node = &mut self.nodes[up_index];
-                    up_node.down = offset + current_index; 
+                    let mut up_node = &mut self.nodes[up];
+                    up_node.down = offset + current_index;
+
+                    let left = offset + prev_index;
+                    let right = offset + ((current_index+1) % elem_count);
+                    
+                    let new_node = Node {
+                        header: header_index,
+                        up,
+                        down: header_index,
+                        left,
+                        right,
+                        len: None,
+                        set_index: Some(self.sets_count)
+                    };
     
-                    self.nodes.push(Node::element(header_index, up_index, 
-                        offset, prev_index, current_index, elem_count));
-                        
+                    self.nodes.push(new_node);
                     prev_index = current_index;
                 }
             }
+
+            self.sets_count += 1;
         }
     }
 
@@ -192,7 +199,7 @@ impl DLXTable {
     pub fn element_nodes_count(&self, elem_index: usize) -> usize {
         let header_index = elem_index+1;
         let header_node = self.nodes[header_index];
-        header_node.len
+        header_node.len.unwrap_or(0)
     }
 
     pub fn element_nodes(&self, elem_index: usize) -> Vec<usize> {
@@ -220,8 +227,8 @@ impl DLXTable {
         if let Some(start_node) = self.nodes.get(node_index) {
             let mut next_node = start_node;
             while next_node.right != node_index {
-                indices.push(next_node.right);
                 let right = next_node.right;
+                indices.push(right);
                 next_node = &self.nodes[right];
             }
         }
@@ -243,6 +250,13 @@ impl DLXTable {
         elem_indices
     }
 
+    pub fn set_index(&self, node_index: usize) -> Option<usize> {
+        match self.nodes.get(node_index) {
+            None => None,
+            Some(node) => node.set_index
+        }
+    }
+
     fn hide_row(&mut self, node_index: usize) {
         for index in self.row_nodes(node_index) {
             if index != node_index {
@@ -258,7 +272,8 @@ impl DLXTable {
                 down_node.up = up;
     
                 let mut header_node = &mut self.nodes[header];
-                header_node.len -= 1;
+                let len = header_node.len.unwrap();
+                header_node.len = Some(len-1);
             }
         }
     }
@@ -281,7 +296,8 @@ impl DLXTable {
     pub fn uncover_header(&mut self, header_index: usize) {
         if header_index <= self.elements.len() {
             self.unhide_element(header_index);
-            for &node_index in self.element_nodes(header_index).iter().rev() {
+            let elem_nodes = self.element_nodes(header_index);
+            for &node_index in elem_nodes.iter().rev() {
                 self.unhide_row(node_index);
             }
         }
@@ -315,7 +331,8 @@ impl DLXTable {
             down_node.up = node_index;
 
             let mut header_node = &mut self.nodes[header];
-            header_node.len += 1;
+            let len = header_node.len.unwrap();
+            header_node.len = Some(len+1);
         }
     }
 
@@ -412,7 +429,8 @@ mod tests {
                 down: 0,
                 left: 1,
                 right: 1,
-                len: 0
+                len: None,
+                set_index: None
             };
             let header = Node {
                 header: 1,
@@ -420,7 +438,8 @@ mod tests {
                 down: 2,
                 left: 0,
                 right: 0,
-                len: 1
+                len: Some(1),
+                set_index: None
             };
             let node = Node {
                 header: 1,
@@ -428,11 +447,13 @@ mod tests {
                 down: 1,
                 left: 2,
                 right: 2,
-                len: 0
+                len: None,
+                set_index: Some(0)
             };
             let expected = DLXTable {
                 elements: vec!["a".to_string()],
-                nodes: vec![root, header, node]
+                nodes: vec![root, header, node],
+                sets_count: 1
             };
     
             assert_eq!(expected, table);
@@ -455,7 +476,8 @@ mod tests {
                 down: 0,
                 left: 4,
                 right: 1,
-                len: 0
+                len: None,
+                set_index: None
             };
             let headers = vec![
                 // 1
@@ -465,7 +487,8 @@ mod tests {
                     down: 5,
                     left: 0,
                     right: 2,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 2
                 Node {
@@ -474,7 +497,8 @@ mod tests {
                     down: 6,
                     left: 1,
                     right: 3,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 3
                 Node {
@@ -483,7 +507,8 @@ mod tests {
                     down: 7,
                     left: 2,
                     right: 4,
-                    len: 1,
+                    len: Some(1),
+                    set_index: None
                 },
                 // 4
                 Node {
@@ -492,7 +517,8 @@ mod tests {
                     down: 8,
                     left:3,
                     right: 0,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 }
             ];
             let element_nodes = vec![
@@ -503,7 +529,8 @@ mod tests {
                     down: 1,
                     left: 8,
                     right: 6,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 6
                 Node {
@@ -512,7 +539,8 @@ mod tests {
                     down: 2,
                     left: 5,
                     right: 7,
-                    len: 0
+                    len: None, 
+                    set_index: Some(0)
                 },
                 // 7
                 Node {
@@ -521,7 +549,8 @@ mod tests {
                     down: 3,
                     left: 6,
                     right: 8,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 8
                 Node {
@@ -530,7 +559,8 @@ mod tests {
                     down: 4,
                     left: 7,
                     right: 5,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 }
             ];
             let mut nodes = vec![root];
@@ -539,7 +569,8 @@ mod tests {
 
             let expected = DLXTable {
                 elements,
-                nodes
+                nodes,
+                sets_count: 1
             };
             assert_eq!(expected, table);
         }
@@ -566,7 +597,8 @@ mod tests {
                 down: 0,
                 left: 6,
                 right: 1,
-                len: 0
+                len: None,
+                set_index: None
             };
             let headers = vec![
                 // 1
@@ -576,7 +608,8 @@ mod tests {
                     down: 7,
                     left: 0,
                     right: 2,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 2
                 Node {
@@ -585,7 +618,8 @@ mod tests {
                     down: 10,
                     left: 1,
                     right: 3,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 3
                 Node {
@@ -594,7 +628,8 @@ mod tests {
                     down: 8,
                     left: 2,
                     right: 4,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 4
                 Node {
@@ -603,7 +638,8 @@ mod tests {
                     down: 11,
                     left:3,
                     right: 5,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 5
                 Node {
@@ -612,7 +648,8 @@ mod tests {
                     down: 9,
                     left: 4,
                     right: 6,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 6
                 Node {
@@ -621,7 +658,8 @@ mod tests {
                     down: 12,
                     left: 5,
                     right: 0,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 }
             ];
             let element_nodes = vec![
@@ -632,7 +670,8 @@ mod tests {
                     down: 1,
                     left: 9,
                     right: 8,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 8
                 Node {
@@ -641,7 +680,8 @@ mod tests {
                     down: 3,
                     left: 7,
                     right: 9,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 9
                 Node {
@@ -650,7 +690,8 @@ mod tests {
                     down: 5,
                     left: 8,
                     right: 7,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 10
                 Node {
@@ -659,7 +700,8 @@ mod tests {
                     down: 2,
                     left: 12,
                     right: 11,
-                    len: 0
+                    len: None,
+                    set_index: Some(1)
                 },
                 // 11
                 Node {
@@ -668,7 +710,8 @@ mod tests {
                     down: 4,
                     left: 10,
                     right: 12,
-                    len: 0
+                    len: None,
+                    set_index: Some(1)
                 },
                 // 12
                 Node {
@@ -677,7 +720,8 @@ mod tests {
                     down: 6,
                     left: 11,
                     right: 10,
-                    len: 0
+                    len: None,
+                    set_index: Some(1)
                 }
             ];
             let mut nodes = vec![root];
@@ -686,7 +730,8 @@ mod tests {
 
             let expected = DLXTable {
                 elements,
-                nodes
+                nodes,
+                sets_count: 2
             };
             assert_eq!(expected, table);
         }
@@ -713,7 +758,8 @@ mod tests {
                 down: 0,
                 left: 5,
                 right: 1,
-                len: 0
+                len: None,
+                set_index: None
             };
             let headers = vec![
                 // 1
@@ -723,7 +769,8 @@ mod tests {
                     down: 6, 
                     left: 0,
                     right: 2,
-                    len: 2
+                    len: Some(2),
+                    set_index: None
                 },
                 // 2
                 Node {
@@ -732,7 +779,8 @@ mod tests {
                     down: 10,
                     left: 1,
                     right: 3,
-                    len: 1,
+                    len: Some(1),
+                    set_index: None
                 },
                 // 3
                 Node {
@@ -741,7 +789,8 @@ mod tests {
                     down: 7,
                     left: 2,
                     right: 4,
-                    len: 2,
+                    len: Some(2),
+                    set_index: None
                 },
                 // 4
                 Node {
@@ -750,7 +799,8 @@ mod tests {
                     down: 12,
                     left: 3,
                     right: 5,
-                    len: 1
+                    len: Some(1),
+                    set_index: None
                 },
                 // 5
                 Node {
@@ -759,7 +809,8 @@ mod tests {
                     down: 8,
                     left: 4,
                     right: 0,
-                    len: 2
+                    len: Some(2),
+                    set_index: None
                 },
             ];
             let element_nodes = vec![
@@ -770,7 +821,8 @@ mod tests {
                     down: 9,
                     left: 8,
                     right: 7,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 7
                 Node {
@@ -779,7 +831,8 @@ mod tests {
                     down: 11,
                     left: 6,
                     right: 8,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 8
                 Node {
@@ -788,7 +841,8 @@ mod tests {
                     down: 13,
                     left: 7,
                     right: 6,
-                    len: 0
+                    len: None,
+                    set_index: Some(0)
                 },
                 // 9
                 Node {
@@ -797,7 +851,8 @@ mod tests {
                     down: 1,
                     left: 11,
                     right: 10,
-                    len: 0
+                    len: None,
+                    set_index: Some(1)
                 },
                 // 10
                 Node {
@@ -806,7 +861,8 @@ mod tests {
                     down: 2,
                     left: 9,
                     right: 11,
-                    len: 0
+                    len: None,
+                    set_index: Some(1)
                 },
                 // 11
                 Node {
@@ -815,7 +871,8 @@ mod tests {
                     down: 3,
                     left: 10,
                     right: 9,
-                    len: 0
+                    len: None,
+                    set_index: Some(1)
                 },
                 // 12
                 Node {
@@ -824,7 +881,8 @@ mod tests {
                     down: 4,
                     left: 13,
                     right: 13,
-                    len: 0
+                    len: None,
+                    set_index: Some(2)
                 },
                 // 13
                 Node {
@@ -833,7 +891,8 @@ mod tests {
                     down: 5,
                     left: 12,
                     right: 12,
-                    len: 0
+                    len: None,
+                    set_index: Some(2)
                 }
             ];
 
@@ -843,7 +902,8 @@ mod tests {
 
             let expected = DLXTable {
                 elements,
-                nodes
+                nodes,
+                sets_count: 3
             };
             assert_eq!(expected, table);
         }

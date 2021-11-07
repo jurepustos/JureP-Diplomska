@@ -1,17 +1,10 @@
-mod dlx_table;
-mod exact_cover;
-mod dlx;
-
-use dlx_table::{DLXTable};
-use dlx::{dlx};
-// use exact_cover::{exact_cover};
+use libdlx::*;
 
 fn main() {
     println!("Hello, world!");
 
     let empty: Vec<Vec<&str>> = vec![];
-    let mut table = DLXTable::from(&empty);
-    let res = dlx(&mut table);
+    let res = dlx(&empty);
 
     // let elements = vec!["a", "b", "c", "d", "e", "f", "g"];
     // let sets = vec![
