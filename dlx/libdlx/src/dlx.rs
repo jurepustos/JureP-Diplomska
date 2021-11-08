@@ -20,35 +20,30 @@ pub fn dlx(sets: &Vec<Vec<&str>>) -> Vec<Vec<usize>> {
 }
 
 fn dlx_run(table: &mut DLXTable) -> Vec<Vec<usize>> {
-    let headers = table.header_nodes();
-    if headers.len() == 0 {
+    let elements = table.element_indices();
+    if elements.len() == 0 {
         // return current solution (built in the recursion step)
         vec![vec![]]
     }
-    else if !table.has_sets() {
+    else if table.has_empty_set() {
         // no solution
         vec![]
     }
-    // else if table.has_empty_set() {
-    //     // no solution
-    //     vec![]
-    // }
     else {
         let mut covers: Vec<Vec<usize>> = Vec::new();
         let elem_index = mrv(table);
         table.cover_element(elem_index);
 
-        let rows = table.element_nodes(elem_index);
-        for node_index in rows {
-            table.cover_row(node_index);
+        let sets = table.element_sets(elem_index);
+        for set_index in sets {
+            table.cover_row(elem_index, set_index);
             let subcovers = dlx_run(table);
             for mut subcover in subcovers {
-                let set_row = table.set_index(node_index).unwrap();
-                subcover.push(set_row);
+                subcover.push(set_index);
                 subcover.sort();
                 covers.push(subcover);
             }
-            table.uncover_row(node_index);
+            table.uncover_row(elem_index, set_index);
         }
 
         table.uncover_element(elem_index);
@@ -59,7 +54,7 @@ fn dlx_run(table: &mut DLXTable) -> Vec<Vec<usize>> {
 }
 
 fn mrv(table: &DLXTable) -> usize {
-    let best_header = table.header_nodes()
+    let best_element = table.element_indices()
         .into_iter()
         .min_by(|&index1, &index2| {
             let count1 = table.element_nodes_count(index1-1);
@@ -68,7 +63,7 @@ fn mrv(table: &DLXTable) -> usize {
         })
         .unwrap_or(0);
 
-    best_header - 1 
+    best_element
 }
 
 
