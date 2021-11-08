@@ -98,10 +98,22 @@ impl DLXTable {
         indices
     }
 
+    pub fn has_empty_set(&self) -> bool {
+        let header_nodes = self.header_nodes();
+        if header_nodes.is_empty() {
+            false
+        }
+        else {
+            header_nodes.into_iter()
+                .any(|index| self.nodes[index].len == Some(0))
+        }
+    }
+
     pub fn has_sets(&self) -> bool {
         let root = self.nodes[0];
         if root.right != 0 {
             let header_nodes = self.header_nodes();
+            let first_node = self.nodes[header_nodes[0]];
             header_nodes
                 .into_iter()
                 .any(|index| self.nodes[index].len != Some(0))
@@ -211,10 +223,12 @@ impl DLXTable {
         let mut indices = Vec::new();
         if header_index <= self.elements.len() {
             let mut next_node = &self.nodes[header_index];
-            while next_node.down != header_index {
+            let mut i = 0;
+            while next_node.down != header_index && i < 10 {
                 indices.push(next_node.down);
                 let down = next_node.down;
                 next_node = &self.nodes[down];
+                i += 1;
             }
         }
 
@@ -296,8 +310,8 @@ impl DLXTable {
     pub fn uncover_header(&mut self, header_index: usize) {
         if header_index <= self.elements.len() {
             self.unhide_element(header_index);
-            let elem_nodes = self.element_nodes(header_index);
-            for &node_index in elem_nodes.iter().rev() {
+            let elem_nodes = self.header_child_nodes(header_index);
+            for node_index in elem_nodes.into_iter().rev() {
                 self.unhide_row(node_index);
             }
         }
@@ -318,21 +332,23 @@ impl DLXTable {
     }
 
     fn unhide_row(&mut self, node_index: usize) {
-        for &index in self.row_nodes(node_index).iter().rev() {
-            let node = &self.nodes[index];
-            let up = node.up;
-            let down = node.down;
-            let header = node.header;
-
-            let mut up_node = &mut self.nodes[up];
-            up_node.down = node_index;
-
-            let mut down_node = &mut self.nodes[down];
-            down_node.up = node_index;
-
-            let mut header_node = &mut self.nodes[header];
-            let len = header_node.len.unwrap();
-            header_node.len = Some(len+1);
+        for index in self.row_nodes(node_index).into_iter().rev() {
+            if index != node_index {
+                let node = &self.nodes[index];
+                let up = node.up;
+                let down = node.down;
+                let header = node.header;
+    
+                let mut up_node = &mut self.nodes[up];
+                up_node.down = index;
+    
+                let mut down_node = &mut self.nodes[down];
+                down_node.up = index;
+    
+                let mut header_node = &mut self.nodes[header];
+                let len = header_node.len.unwrap();
+                header_node.len = Some(len+1);
+            }
         }
     }
 
@@ -960,64 +976,76 @@ mod tests {
         #[test]
         fn header_unchanged() {
             let mut table = create_table();
-            let header_node = table.nodes[1];
-            let up_before = header_node.up;
-            let down_before = header_node.down; 
-
             table.cover_element(0);
+
             let header_node = table.nodes[1];
             
-            let up_after = header_node.up;
-            assert_eq!(up_before, up_after);
-            
-            let down_after = header_node.down;
-            assert_eq!(down_before, down_after);
+            assert_eq!(11, header_node.down);
+            assert_eq!(17, header_node.up);
+            assert_eq!(0, header_node.left);
+            assert_eq!(2, header_node.right);
         }
 
         #[test]
-        fn header_disconnected() {
+        fn header_horizontal_disconnected() {
             let mut table = create_table();
             table.cover_element(0);
 
-            let header_node = table.nodes[1];
-            let left = header_node.left;
-            let right = header_node.right;
+            let left_node = table.nodes[0];
+            let right_node = table.nodes[2];
 
-            let left_node = table.nodes[left];
-            let right_node = table.nodes[right];
+            assert_eq!(2, left_node.right);
+            assert_eq!(0, right_node.left);
+        }
 
-            assert_eq!(right, left_node.right);
-            assert_eq!(left, right_node.left);
+        #[test]
+        fn header_vertical_connected() {
+            let mut table = create_table();
+            table.cover_element(0);
+            
+            let down_node = table.nodes[11];
+            let up_node = table.nodes[17];
+
+            assert_eq!(1, down_node.up);
+            assert_eq!(1, up_node.down);
         }
 
         #[test]
         fn element_nodes_unchanged() {
             let mut table = create_table();
-            let element_nodes_before = table.element_nodes(1);
             table.cover_element(0);
-            let element_nodes_after = table.element_nodes(1);
+            let element_nodes = table.element_nodes(0);
 
-            assert_eq!(element_nodes_before, element_nodes_after);
+            let expected = vec![11,17];
+            assert_eq!(expected, element_nodes);
         }
 
+
         #[test]
-        fn rows_disconnected() {
+        fn header_children_connected() {
             let mut table = create_table();
             table.cover_element(0);
 
-            for node_index in table.element_nodes(0) {
-                for row_node_index in table.row_nodes(node_index) {
-                    if row_node_index != node_index {
-                        let node = table.nodes[row_node_index];
-                        
-                        let up_node = table.nodes[node.up];
-                        assert_ne!(up_node.down, row_node_index);
-                        
-                        let down_node = table.nodes[node.down];
-                        assert_ne!(down_node.up, row_node_index);
-                    }
-                }
-            }
+            let first_node = table.nodes[11];
+            let second_node = table.nodes[17];
+
+            assert_eq!(1, first_node.up);
+            assert_eq!(17, first_node.down);
+            assert_eq!(11, second_node.up);
+            assert_eq!(1, second_node.down);
+        }
+
+        #[test]
+        fn row_nodes_vertical_disconnected() {
+            let mut table = create_table();
+            table.cover_element(0);
+
+            let second_header = table.nodes[4];
+            assert_eq!(21, second_header.down);
+            assert_eq!(21, second_header.up);
+
+            let third_header = table.nodes[7];
+            assert_eq!(20, third_header.down);
         }
     }
 
@@ -1025,6 +1053,16 @@ mod tests {
     mod uncover_element {
         use super::*;
         use super::super::*;
+
+        #[test]
+        fn recovers_original_state() {
+            let orig_table = create_table();
+            let mut table = create_table();
+            table.cover_element(0);
+            table.uncover_element(0);
+
+            assert_eq!(orig_table, table);
+        }
 
         #[test]
         fn header_reconnected() {
@@ -1037,24 +1075,50 @@ mod tests {
             assert_eq!(2, header_node.right);
         }
 
+        #[test]
         fn rows_reconnected() {
             let mut table = create_table();
+
             table.cover_element(0);
             table.uncover_element(0);
 
-            for node_index in table.element_nodes(1) {
-                for row_node_index in table.row_nodes(node_index) {
-                    if row_node_index != node_index {
-                        let node = table.nodes[row_node_index];
-                        
-                        let up_node = table.nodes[node.up];
-                        assert_eq!(up_node.down, row_node_index);
-                        
-                        let down_node = table.nodes[node.down];
-                        assert_eq!(down_node.up, row_node_index);
-                    }
-                }
-            }
+            let second_header = table.nodes[4];
+            assert_eq!(12, second_header.down);
+
+            let bottom_node = table.nodes[21];
+            assert_eq!(18, bottom_node.up);
+
+            let third_header = table.nodes[7];
+            assert_eq!(13, third_header.down);
+        }
+    }
+
+    #[cfg(test)]
+    mod cover_row {
+        use super::*;
+        use super::super::*;
+        
+        #[test]
+        #[ignore]
+        fn element_headers_disconnected() {
+            let mut table = create_table();
+            table.cover_row(11);
+        }
+    }
+
+    #[cfg(test)]
+    mod uncover_row {
+        use super::*;
+        use super::super::*;
+        
+        #[test]
+        fn recovers_original_state() {
+            let orig_table = create_table();
+            let mut table = create_table();
+            table.cover_row(11);
+            table.uncover_row(11);
+
+            assert_eq!(orig_table, table);
         }
     }
 }
