@@ -312,7 +312,7 @@ impl DLXTable {
         if element < self.element_count {
             self.unhide_element(element);
             let elem_sets = self.element_sets(element);
-            for set_index in elem_sets.into_iter().rev() {
+            for set_index in elem_sets {
                 self.unhide_row(element, set_index);
             }
         }
@@ -333,7 +333,7 @@ impl DLXTable {
     }
 
     fn unhide_row(&mut self, element: usize, set_index: usize) {
-        for index in self.row_nodes(set_index).into_iter().rev() {
+        for index in self.row_nodes(set_index) {
             let node = &self.nodes[index];
             if self.get_element(node) != element {
                 let up = node.up;
