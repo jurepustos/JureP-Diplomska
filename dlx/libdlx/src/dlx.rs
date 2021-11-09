@@ -1,6 +1,6 @@
 use crate::dlx_table::DLXTable;
 
-pub fn exact_cover<'a>(sets: &'a Vec<Vec<&str>>) -> Vec<Vec<&'a Vec<&'a str>>> {
+pub fn exact_cover<'a>(sets: &'a Vec<Vec<usize>>) -> Vec<Vec<&'a Vec<usize>>> {
     let mut table = DLXTable::from(&sets);
     let index_covers = dlx_run(&mut table);
     let mut set_covers = Vec::with_capacity(index_covers.len());
@@ -15,17 +15,17 @@ pub fn exact_cover<'a>(sets: &'a Vec<Vec<&str>>) -> Vec<Vec<&'a Vec<&'a str>>> {
     set_covers
 }
 
-pub fn dlx(sets: &Vec<Vec<&str>>) -> Vec<Vec<usize>> {
+pub fn dlx(sets: &Vec<Vec<usize>>) -> Vec<Vec<usize>> {
     dlx_run(&mut DLXTable::from(&sets))
 }
 
 fn dlx_run(table: &mut DLXTable) -> Vec<Vec<usize>> {
-    let elements = table.element_indices();
-    if elements.len() == 0 {
+    let elements = table.elements();
+    if elements.is_empty() {
         // return current solution (built in the recursion step)
         vec![vec![]]
     }
-    else if table.has_empty_set() {
+    else if table.has_empty_sets() {
         // no solution
         vec![]
     }
@@ -54,7 +54,7 @@ fn dlx_run(table: &mut DLXTable) -> Vec<Vec<usize>> {
 }
 
 fn mrv(table: &DLXTable) -> usize {
-    let best_element = table.element_indices()
+    let best_element = table.elements()
         .into_iter()
         .min_by(|&index1, &index2| {
             let count1 = table.element_nodes_count(index1);
@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn no_sets() {
-        let empty: Vec<Vec<&str>> = vec![];
+        let empty: Vec<Vec<usize>> = vec![];
         let covers = dlx(&empty);
 
         let expected: Vec<Vec<usize>> = vec![vec![]];
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn empty_set() {
-        let empty: Vec<Vec<&str>> = vec![vec![]];
+        let empty: Vec<Vec<usize>> = vec![vec![]];
         let covers = dlx(&empty);
 
         let expected: Vec<Vec<usize>> = vec![vec![]];
@@ -91,10 +91,9 @@ mod tests {
 
     #[test]
     fn one_element() {
-        let sets = vec![vec!["a"]];
+        let sets = vec![vec![0]];
         let covers = dlx(&sets);
         
-        // let exp_cover = vec![&sets[0]];
         let expected = vec![vec![0]];
         assert_eq!(expected, covers);
     }
@@ -102,8 +101,8 @@ mod tests {
     #[test]
     fn disjoint_sets() {
         let sets = vec![
-            vec!["a", "b"],
-            vec!["c", "d"]
+            vec![0,1],
+            vec![2,3]
         ];
         let covers = dlx(&sets);
 
@@ -116,9 +115,9 @@ mod tests {
     #[test]
     fn one_solution() {
         let sets = vec![
-            vec!["a", "b"],
-            vec!["c", "d"],
-            vec!["a", "c"]
+            vec![0,1],
+            vec![2,3],
+            vec![0,2]
         ];
         let covers = dlx(&sets);
 
@@ -129,12 +128,12 @@ mod tests {
     #[test]
     fn one_solution_2() {
         let sets = vec![
-            vec!["c", "e", "f"],
-            vec!["a", "d", "g"],
-            vec!["b", "c", "f"],
-            vec!["a", "d"],
-            vec!["b", "g"],
-            vec!["d", "e", "g"]
+            vec![2,4,5],
+            vec![0,3,6],
+            vec![1,2,5],
+            vec![0,3],
+            vec![1,6],
+            vec![3,4,6]
         ];
         let covers = dlx(&sets);
 
