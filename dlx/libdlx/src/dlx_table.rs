@@ -74,18 +74,18 @@ impl DLXTable {
         table
     }
 
-    fn get_header(&self, elem_index: usize) -> Option<&Node> {
-        if elem_index < self.element_count {
-            self.nodes.get(elem_index+1)
+    fn get_header(&self, element: usize) -> Option<&Node> {
+        if element < self.element_count {
+            self.nodes.get(element+1)
         }
         else {
             None
         }
     }
 
-    fn get_header_mut(&mut self, elem_index: usize) -> Option<&mut Node> {
-        if elem_index < self.element_count {
-            self.nodes.get_mut(elem_index+1)
+    fn get_header_mut(&mut self, element: usize) -> Option<&mut Node> {
+        if element < self.element_count {
+            self.nodes.get_mut(element+1)
         }
         else {
             None
@@ -201,17 +201,17 @@ impl DLXTable {
     }
 
 
-    pub fn cover_element(&mut self, elem_index: usize) {
-        if elem_index < self.element_count {
-            self.hide_element(elem_index);
-            for set_index in self.element_sets(elem_index) {
-                self.hide_row(elem_index, set_index);
+    pub fn cover_element(&mut self, element: usize) {
+        if element < self.element_count {
+            self.hide_element(element);
+            for set_index in self.element_sets(element) {
+                self.hide_row(element, set_index);
             }
         }
     }
 
-    fn hide_element(&mut self, elem_index: usize) {
-        if let Some(header) = self.get_header(elem_index) {
+    fn hide_element(&mut self, element: usize) {
+        if let Some(header) = self.get_header(element) {
             let left = header.left;
             let right = header.right;
 
@@ -223,19 +223,19 @@ impl DLXTable {
         }
     }
 
-    pub fn element_nodes_count(&self, elem_index: usize) -> usize {
-        match self.get_header(elem_index) {
+    pub fn element_sets_count(&self, element: usize) -> usize {
+        match self.get_header(element) {
             Some(header) => header.len.unwrap_or(0),
             None => 0 
         }
     }
 
-    pub fn element_nodes(&self, elem_index: usize) -> Vec<usize> {
-        let header_index = elem_index+1;
+    fn element_nodes(&self, element: usize) -> Vec<usize> {
         let mut indices = Vec::new();
-        if header_index <= self.element_count {
-            let mut next_node = &self.nodes[header_index];
-            while next_node.down != header_index {
+        if element < self.element_count {
+            let header = self.get_header(element).unwrap();
+            let mut next_node = header;
+            while next_node.down != header.header {
                 indices.push(next_node.down);
                 let down = next_node.down;
                 next_node = &self.nodes[down];
@@ -264,24 +264,17 @@ impl DLXTable {
         indices
     }
 
-    pub fn row_elements(&self, set: usize) -> Vec<usize> {
+    pub fn set_elements(&self, set_index: usize) -> Vec<usize> {
         let mut elem_indices = Vec::new();
-        let row_nodes = self.row_nodes(set);
+        let row_nodes = self.row_nodes(set_index);
         for node_index in row_nodes {
             let node = &self.nodes[node_index];
-            let elem_index = self.get_element(node);
-            elem_indices.push(elem_index);
+            let element = self.get_element(node);
+            elem_indices.push(element);
         } 
 
         elem_indices.sort();
         elem_indices
-    }
-
-    pub fn set_index(&self, node_index: usize) -> Option<usize> {
-        match self.nodes.get(node_index) {
-            Some(node) => node.set,
-            None => None
-        }
     }
 
     fn hide_row(&mut self, element: usize, set_index: usize) {
@@ -315,18 +308,18 @@ impl DLXTable {
         }
     }
 
-    pub fn uncover_element(&mut self, elem_index: usize) {
-        if elem_index < self.element_count {
-            self.unhide_element(elem_index);
-            let elem_nodes = self.element_sets(elem_index);
-            for set_index in elem_nodes.into_iter().rev() {
-                self.unhide_row(elem_index, set_index);
+    pub fn uncover_element(&mut self, element: usize) {
+        if element < self.element_count {
+            self.unhide_element(element);
+            let elem_sets = self.element_sets(element);
+            for set_index in elem_sets.into_iter().rev() {
+                self.unhide_row(element, set_index);
             }
         }
     }
 
-    fn unhide_element(&mut self, elem_index: usize) {
-        if let Some(header) = &self.get_header(elem_index) {
+    fn unhide_element(&mut self, element: usize) {
+        if let Some(header) = &self.get_header(element) {
             let left = header.left;
             let right = header.right;
             let header_index = header.header;
@@ -365,8 +358,8 @@ impl DLXTable {
             let node = &self.nodes[index];
             if self.get_element(node) != element {
                 let node = &self.nodes[index];
-                let elem_index = self.get_element(node);
-                self.uncover_element(elem_index);
+                let node_element = self.get_element(node);
+                self.uncover_element(node_element);
             }
         }
     }
@@ -1090,10 +1083,34 @@ mod tests {
         use super::*;
         
         #[test]
-        #[ignore]
+        fn element_headers_unchanged() {
+            let mut table = create_table();
+            table.cover_row(0, 1);
+
+            let second_header = &table.nodes[4];
+            assert_eq!(3, second_header.left);
+            assert_eq!(5, second_header.right);
+
+            let third_header = &table.nodes[7];
+            assert_eq!(6, third_header.left);
+            assert_eq!(0, third_header.right);
+        }
+
+        #[test]
         fn element_headers_disconnected() {
             let mut table = create_table();
-            table.cover_row(0, 2);
+            table.cover_row(0, 1);
+
+            let before_second_header = &table.nodes[4];
+            let after_second_header = &table.nodes[5];
+
+            assert_eq!(5, before_second_header.right);
+            assert_eq!(3, after_second_header.left);
+
+            let before_third_header = &table.nodes[6];
+            let after_third_header = &table.nodes[0];
+            assert_eq!(0, before_third_header.right);
+            assert_eq!(6, after_third_header.left);
         }
     }
 
@@ -1105,8 +1122,8 @@ mod tests {
         fn recovers_original_state() {
             let orig_table = create_table();
             let mut table = create_table();
-            table.cover_row(0, 2);
-            table.uncover_row(0, 2);
+            table.cover_row(0, 1);
+            table.uncover_row(0, 1);
 
             assert_eq!(orig_table, table);
         }
