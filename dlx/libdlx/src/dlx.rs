@@ -57,8 +57,8 @@ fn mrv(table: &DLXTable) -> usize {
     let best_element = table.element_indices()
         .into_iter()
         .min_by(|&index1, &index2| {
-            let count1 = table.element_nodes_count(index1-1);
-            let count2 = table.element_nodes_count(index2-1);
+            let count1 = table.element_nodes_count(index1);
+            let count2 = table.element_nodes_count(index2);
             count1.cmp(&count2)
         })
         .unwrap_or(0);

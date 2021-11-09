@@ -126,10 +126,12 @@ impl DLXTable {
     pub fn element_sets(&self, element: usize) -> Vec<usize> {
         let mut indices = Vec::new();
         if let Some(header) = self.get_header(element) {
-            let mut node = &self.nodes[header.down];
+            let mut node = header;
             while node.down != header.header {
-                indices.push(self.get_element(node));
                 node = &self.nodes[node.down];
+                if let Some(set_index) = node.set {
+                    indices.push(set_index);
+                }
             }
         }
         
@@ -294,10 +296,9 @@ impl DLXTable {
         for index in self.row_nodes(set_index) {
             let node = &self.nodes[index];
             if self.get_element(node) != element {
-                let node = &self.nodes[index];
                 let up = node.up;
-                let down = node.down;
-                let header = node.header;
+                let down = node.down;   
+                let element = self.get_element(node);
     
                 let mut up_node = &mut self.nodes[up];
                 up_node.down = down;
@@ -305,8 +306,8 @@ impl DLXTable {
                 let mut down_node = &mut self.nodes[down];
                 down_node.up = up;
     
-                let mut header = &mut self.nodes[header];
-                let len = header.len.unwrap();
+                let mut header = self.get_header_mut(element).unwrap();
+                let len = header.len.unwrap_or(1);
                 header.len = Some(len-1);
             }
         }
@@ -314,11 +315,10 @@ impl DLXTable {
 
     pub fn cover_row(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index) {
-            let node = &self.nodes[element];
-            if self.get_element(node) != element {
-                let node = &self.nodes[index];
-                let elem_index = self.get_element(node);
-                self.cover_element(elem_index);
+            let node = &self.nodes[index];
+            let node_element = self.get_element(node);
+            if node_element != element {
+                self.cover_element(node_element);
             }
         }
     }
@@ -351,7 +351,6 @@ impl DLXTable {
         for index in self.row_nodes(set_index).into_iter().rev() {
             let node = &self.nodes[index];
             if self.get_element(node) != element {
-                let node = &self.nodes[index];
                 let up = node.up;
                 let down = node.down;
                 let header = node.header;
@@ -363,7 +362,7 @@ impl DLXTable {
                 down_node.up = index;
     
                 let mut header_node = &mut self.nodes[header];
-                let len = header_node.len.unwrap();
+                let len = header_node.len.unwrap_or(0);
                 header_node.len = Some(len+1);
             }
         }
@@ -929,6 +928,35 @@ mod tests {
     }
 
     #[cfg(test)]
+    mod element_sets {
+        use super::*;
+
+        #[test]
+        fn one_element() {
+            let sets = vec![vec!["a"]];
+            let table = DLXTable::from(&sets);
+
+            let element_sets = table.element_sets(0);
+            
+            let expected = vec![0];
+            assert_eq!(expected, element_sets); 
+        }
+
+        #[test]
+        fn finds_all_containing_sets() {
+            let table = create_table();
+
+            let element_sets = table.element_sets(0);
+            let expected = vec![1,3];
+            assert_eq!(expected, element_sets);
+
+            let element_sets = table.element_sets(3);
+            let expected = vec![1,3,5];
+            assert_eq!(expected, element_sets);
+        }
+    }
+
+    #[cfg(test)]
     mod row_nodes {
         use super::*;
 
@@ -939,17 +967,15 @@ mod tests {
             ];
             let table = DLXTable::from(&sets);
 
-            assert_eq!(1, table.row_nodes(2).len());
+            assert_eq!(1, table.row_nodes(0).len());
         }
 
         #[test]
         fn counts_all_elements() {
             let table = create_table();
-            let first_row_index = 8;
-            let second_row_index = 12;
 
-            let first_row_nodes = table.row_nodes(first_row_index);
-            let second_row_nodes = table.row_nodes(second_row_index);
+            let first_row_nodes = table.row_nodes(0);
+            let second_row_nodes = table.row_nodes(1);
             assert_eq!(3, first_row_nodes.len());
             assert_eq!(3, second_row_nodes.len());
         }
@@ -957,14 +983,12 @@ mod tests {
         #[test]
         fn finds_all_elements() {
             let table = create_table();
-            let first_row_index = 8;
-            let second_row_index = 12;
 
-            let first_row_nodes = table.row_nodes(first_row_index);
+            let first_row_nodes = table.row_nodes(0);
             let expected = vec![8,9,10];
             assert_eq!(expected, first_row_nodes);
             
-            let second_row_nodes = table.row_nodes(second_row_index);
+            let second_row_nodes = table.row_nodes(1);
             let expected = vec![11,12,13];
             assert_eq!(expected, second_row_nodes);
         }
