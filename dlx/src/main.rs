@@ -1,4 +1,7 @@
+mod sudoku;
+
 use libdlx::*;
+use sudoku::*;
 
 fn main() {
     println!("Hello, world!");
