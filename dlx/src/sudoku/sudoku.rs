@@ -8,9 +8,9 @@ pub struct Cell {
 }
 
 impl Cell {
-    fn make(row: usize, column: usize, value: usize) -> Option<Self> {
-        if row < 9 && column < 9 && value > 0 && value <= 9 {
-            Some(Self { row, column, value })
+    pub fn make(row: usize, column: usize, value: usize) -> Option<Self> {
+        if row < 9 && column < 9 && value >= 1 && value <= 9 {
+            Some(Cell { row, column, value })
         }
         else {
             None
@@ -26,6 +26,38 @@ struct Spec {
 }
 
 impl Spec {
+    fn make(cells: &[Cell]) -> Option<Self> {
+        let mut rows = [[false; 9]; 9];
+        let mut columns = [[false; 9]; 9];
+        let mut blocks = [[false; 9]; 9];
+
+        let mut valid = true;
+        
+        for cell in cells {
+            let row = cell.row;
+            let column = cell.column;
+            let value = cell.value;
+            let block = block_index(row, column);
+
+            if !rows[row][value]
+            || !columns[column][value]
+            || !blocks[block][value] {
+                valid = false;
+                break;
+            }
+            else {
+                rows[row][value] = true;
+                columns[column][value] = true;
+                blocks[block][value] = true;
+            }
+        }
+
+        match valid {
+            true => Some(Spec { rows, columns, blocks }),
+            false => None
+        }
+    }
+
     fn from(cells: &[Cell]) -> Self {
         let mut rows = [[false; 9]; 9];
         let mut columns = [[false; 9]; 9];
@@ -49,11 +81,9 @@ impl Spec {
         let mut allowed_cells: Vec<Cell> = Vec::new();
         for row in 0..9 {
             for column in 0..9 {
-                for value in 1..10 {
-                    if self.is_given(row, column, value) {
-                        allowed_cells.push(Cell { row, column, value });
-                    }
-                    else if self.is_allowed(row, column, value) {
+                for value in 1..=9 {
+                    if self.is_given(row, column, value)
+                    || self.is_allowed(row, column, value) {
                         allowed_cells.push(Cell { row, column, value });
                     }
                 }
@@ -76,25 +106,32 @@ impl Spec {
     }
 }
 
-pub fn solve_sudoku(clues: &[Cell]) -> Vec<Vec<Cell>> {
-    let spec = Spec::from(clues);
-    let options = spec.options();
+pub fn verify(cells: &[Cell]) -> bool {
+    Spec::make(cells).is_some()
+}
 
-    let dlx_sets: Vec<Vec<usize>> = options.iter()
-        .map(|cell| dlx_set(cell))
-        .collect();
-
-    let dlx_solutions = dlx(&dlx_sets);
-    let mut cell_solutions: Vec<Vec<Cell>> = Vec::new();
-    for dlx_solution in dlx_solutions {
-        let cell_solution: Vec<Cell> = dlx_solution.into_iter()
-            .map(|index| options[index])
+pub fn solve(clues: &[Cell]) -> Vec<Vec<Cell>> {
+    if let Some(spec) = Spec::make(clues) {
+        let options = spec.options();
+        let dlx_sets: Vec<Vec<usize>> = options.iter()
+            .map(|cell| dlx_set(cell))
             .collect();
 
-        cell_solutions.push(cell_solution);
-    }
+        let dlx_solutions = dlx(&dlx_sets);
+        let mut cell_solutions: Vec<Vec<Cell>> = Vec::new();
+        for dlx_solution in dlx_solutions {
+            let cell_solution: Vec<Cell> = dlx_solution.into_iter()
+                .map(|index| options[index])
+                .collect();
 
-    cell_solutions
+            cell_solutions.push(cell_solution);
+        }
+
+        cell_solutions
+    }
+    else {
+        Vec::new()
+    }
 }
 
 fn block_index(row: usize, column: usize) -> usize {
