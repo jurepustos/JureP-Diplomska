@@ -44,6 +44,7 @@ pub struct DLXTable {
 
 
 impl DLXTable {
+    // Construct an empty table
     pub fn new() -> Self {
         DLXTable { 
             element_count: 0, 
@@ -52,6 +53,7 @@ impl DLXTable {
         }
     }
 
+    // Construct a table with the given reserved space for nodes
     fn with_capacity(elements: usize, sets_count: usize) -> Self {
         let mut nodes = Vec::with_capacity(elements+sets_count+1); 
         nodes.push(Node::root());
@@ -63,6 +65,7 @@ impl DLXTable {
         }
     }
 
+    // Construct a table from the the given sets 
     pub fn from(sets: &Vec<Vec<usize>>) -> Self {
         let elements = element_count(&sets);
         let mut table = Self::with_capacity(elements, sets.len());
@@ -74,6 +77,7 @@ impl DLXTable {
         table
     }
 
+    // Gets the header node for the given element 
     fn get_header(&self, element: usize) -> Option<&Node> {
         if element < self.element_count {
             self.nodes.get(element+1)
@@ -83,6 +87,7 @@ impl DLXTable {
         }
     }
 
+    // Gets the mutable reference to the header node of an element
     fn get_header_mut(&mut self, element: usize) -> Option<&mut Node> {
         if element < self.element_count {
             self.nodes.get_mut(element+1)
@@ -92,10 +97,12 @@ impl DLXTable {
         }
     }
 
+    // Gets the element that the node represents in a set 
     fn get_element(&self, node: &Node) -> usize {
         node.header - 1
     }
 
+    // Gives all visible elements in the table
     pub fn elements(&self) -> Vec<usize> {
         let mut indices = Vec::new();
         let root = self.nodes[0];
@@ -111,6 +118,7 @@ impl DLXTable {
         indices
     }
 
+    // Gets indices of all visible sets that contain the given element
     pub fn element_sets(&self, element: usize) -> Vec<usize> {
         let mut indices = Vec::new();
         if let Some(header) = self.get_header(element) {
@@ -127,6 +135,7 @@ impl DLXTable {
         indices
     }
 
+    // Returns true if the table contains any visible sets with no elements
     pub fn has_empty_sets(&self) -> bool {
         let elements = self.elements();
         if elements.is_empty() {
@@ -138,6 +147,7 @@ impl DLXTable {
         }
     }
     
+    // Creates headers for all elements
     fn create_headers(&mut self) {
         let length = self.element_count;
         for i in 0..length {
@@ -151,6 +161,7 @@ impl DLXTable {
         }
     }
 
+    // Adds a set to the table
     fn add_set(&mut self, set: &[usize]) {
         if !set.is_empty() {
             self.set_heads.push(self.nodes.len());
@@ -164,6 +175,11 @@ impl DLXTable {
         }
     }
 
+    // Adds a node representing a given element in the given set to the table. 
+    // We also need the index of this element in the set (index),
+    // the number of elements already in the set (set_len)
+    // and the index of the first element of the set (offset),
+    // which will be this node's index if the set is currently empty
     fn insert_node(&mut self, index: usize, element: usize, set_index: usize, offset: usize, set_len: usize) {
         let mut header = self.get_header_mut(element).unwrap();
         let header_index = header.header;
@@ -200,7 +216,8 @@ impl DLXTable {
         self.nodes.push(new_node);
     }
 
-
+    // Covers the given element by hiding the element's header 
+    // and all rows that contain it
     pub fn cover_element(&mut self, element: usize) {
         if element < self.element_count {
             self.hide_element(element);
@@ -210,6 +227,7 @@ impl DLXTable {
         }
     }
 
+    // Hides the given element in the set by rewiring its left and right nodes
     fn hide_element(&mut self, element: usize) {
         if let Some(header) = self.get_header(element) {
             let left = header.left;
@@ -223,6 +241,7 @@ impl DLXTable {
         }
     }
 
+    // Counts the number for sets that visibly contain the given element  
     pub fn element_sets_count(&self, element: usize) -> usize {
         match self.get_header(element) {
             Some(header) => header.len.unwrap_or(0),
@@ -230,6 +249,7 @@ impl DLXTable {
         }
     }
 
+    // Gets table indices of all visible nodes that represent the given element  
     fn element_nodes(&self, element: usize) -> Vec<usize> {
         let mut indices = Vec::new();
         if element < self.element_count {
@@ -246,6 +266,7 @@ impl DLXTable {
         indices
     }
 
+    // Gets table indices of all visible nodes in the row representing the given set 
     pub fn row_nodes(&self, set_index: usize) -> Vec<usize> {
         let mut indices = vec![];
         if let Some(&set_head) = self.set_heads.get(set_index) {
@@ -264,6 +285,7 @@ impl DLXTable {
         indices
     }
 
+    // Gets all visible elements in the given set
     pub fn set_elements(&self, set_index: usize) -> Vec<usize> {
         let mut elem_indices = Vec::new();
         let row_nodes = self.row_nodes(set_index);
@@ -277,6 +299,8 @@ impl DLXTable {
         elem_indices
     }
 
+    // Hides the row representing the given set by rewiring up and down nodes
+    // of all nodes in the row
     fn hide_row(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index) {
             let node = &self.nodes[index];
@@ -298,6 +322,8 @@ impl DLXTable {
         }
     }
 
+    // Covers the row representing the given set 
+    // by covering all visible elements in the set
     pub fn cover_row(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index) {
             let node = &self.nodes[index];
@@ -308,6 +334,8 @@ impl DLXTable {
         }
     }
 
+    // Uncovers the given covered element by unhiding the element 
+    // and rows that contain it
     pub fn uncover_element(&mut self, element: usize) {
         if element < self.element_count {
             self.unhide_element(element);
@@ -318,6 +346,7 @@ impl DLXTable {
         }
     }
 
+    // Unhides the given hidden element (undoes the left-right rewire) 
     fn unhide_element(&mut self, element: usize) {
         if let Some(header) = &self.get_header(element) {
             let left = header.left;
@@ -332,6 +361,9 @@ impl DLXTable {
         }
     }
 
+    // Unhides the row representing the given set with respect to the given element
+    // (undoes the up-down rewire for all nodes in the row,
+    // except for the node that represents the given element)
     fn unhide_row(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index) {
             let node = &self.nodes[index];
@@ -353,6 +385,9 @@ impl DLXTable {
         }
     }
 
+    // Uncovers the row representing the given set with respect to the given element
+    // (undoes the cover of all nodes in the row, 
+    // except for the one representing the given element as it's alreadz uncovered)
     pub fn uncover_row(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index).into_iter().rev() {
             let node = &self.nodes[index];
@@ -365,6 +400,7 @@ impl DLXTable {
     }
 }
 
+// Counts the number of elements in the given sets
 fn element_count(sets: &[Vec<usize>]) -> usize {
     match max_element(sets) {
         None => 0,
@@ -372,6 +408,7 @@ fn element_count(sets: &[Vec<usize>]) -> usize {
     }
 }
 
+// Finds the biggest element in the given sets
 fn max_element(sets: &[Vec<usize>]) -> Option<usize> {
     sets.into_iter()
         .flat_map(|set|

@@ -1,5 +1,8 @@
 use crate::dlx_table::DLXTable;
 
+// Finds all exact covers of the given sets with the DLX algorithm.
+// Solutions are given as a Vec of all possible covers,
+// where each covers is a Vec of references to sets that make it up
 pub fn exact_cover<'a>(sets: &'a Vec<Vec<usize>>) -> Vec<Vec<&'a Vec<usize>>> {
     let mut table = DLXTable::from(&sets);
     let index_covers = dlx_run(&mut table);
@@ -15,10 +18,14 @@ pub fn exact_cover<'a>(sets: &'a Vec<Vec<usize>>) -> Vec<Vec<&'a Vec<usize>>> {
     set_covers
 }
 
+// Finds all exact covers of the given sets with the DLX algorithm.
+// Solutions are given as a Vec of all possible covers, /
+// with each cover being a sorted Vec of indices of sets that make it up
 pub fn dlx(sets: &Vec<Vec<usize>>) -> Vec<Vec<usize>> {
     dlx_run(&mut DLXTable::from(&sets))
 }
 
+// The recursive backtracking algorithm with the Dancing Links technique
 fn dlx_run(table: &mut DLXTable) -> Vec<Vec<usize>> {
     let elements = table.elements();
     if elements.is_empty() {

@@ -106,10 +106,12 @@ impl Spec {
     }
 }
 
+// Verifies that the given list of cells represents a valid sudoku puzzle or solution
 pub fn verify(cells: &[Cell]) -> bool {
     Spec::make(cells).is_some()
 }
 
+// Gives all possible solutions to the given sudoku puzzle
 pub fn solve(clues: &[Cell]) -> Vec<Vec<Cell>> {
     if let Some(spec) = Spec::make(clues) {
         let options = spec.options();
@@ -134,10 +136,12 @@ pub fn solve(clues: &[Cell]) -> Vec<Vec<Cell>> {
     }
 }
 
+// Gets the block index of the given coordinates in the sudoku grid
 fn block_index(row: usize, column: usize) -> usize {
     3*(row/3) + (column/3)
 }
 
+// Transforms the given cell into a set that will be used in DLX for solving 
 fn dlx_set(cell: &Cell) -> Vec<usize> {
     let row = cell.row;
     let column = cell.column;
