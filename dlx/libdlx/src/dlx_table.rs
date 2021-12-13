@@ -324,7 +324,7 @@ impl DLXTable {
 
     // Covers the row representing the given set 
     // by covering all visible elements in the set
-    pub fn cover_row(&mut self, element: usize, set_index: usize) {
+    pub fn cover_set(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index) {
             let node = &self.nodes[index];
             let node_element = self.get_element(node);
@@ -387,8 +387,8 @@ impl DLXTable {
 
     // Uncovers the row representing the given set with respect to the given element
     // (undoes the cover of all nodes in the row, 
-    // except for the one representing the given element as it's alreadz uncovered)
-    pub fn uncover_row(&mut self, element: usize, set_index: usize) {
+    // except for the one representing the given element as it's already uncovered)
+    pub fn uncover_set(&mut self, element: usize, set_index: usize) {
         for index in self.row_nodes(set_index).into_iter().rev() {
             let node = &self.nodes[index];
             if self.get_element(node) != element {
@@ -1116,13 +1116,13 @@ mod tests {
     }
 
     #[cfg(test)]
-    mod cover_row {
+    mod cover_set {
         use super::*;
         
         #[test]
         fn element_headers_unchanged() {
             let mut table = create_table();
-            table.cover_row(0, 1);
+            table.cover_set(0, 1);
 
             let second_header = &table.nodes[4];
             assert_eq!(3, second_header.left);
@@ -1136,7 +1136,7 @@ mod tests {
         #[test]
         fn element_headers_disconnected() {
             let mut table = create_table();
-            table.cover_row(0, 1);
+            table.cover_set(0, 1);
 
             let before_second_header = &table.nodes[4];
             let after_second_header = &table.nodes[5];
@@ -1152,15 +1152,15 @@ mod tests {
     }
 
     #[cfg(test)]
-    mod uncover_row {
+    mod uncover_set {
         use super::*;
         
         #[test]
         fn recovers_original_state() {
             let orig_table = create_table();
             let mut table = create_table();
-            table.cover_row(0, 1);
-            table.uncover_row(0, 1);
+            table.cover_set(0, 1);
+            table.uncover_set(0, 1);
 
             assert_eq!(orig_table, table);
         }
