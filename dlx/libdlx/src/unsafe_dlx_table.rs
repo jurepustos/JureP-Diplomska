@@ -1,120 +1,131 @@
+use std::hash::Hash;
+use std::collections::{HashSet, HashMap};
+use std::ptr::{null, null_mut};
+
 #[derive(Clone,Copy,Debug)]
 struct Node<T> {
     header: *mut Header<T>,
-    up: *mut Node,
-    down: *mut Node,
-    left: *mut Node,
-    right: *mut Node
+    up: *mut Node<T>,
+    down: *mut Node<T>,
+    left: *mut Node<T>,
+    right: *mut Node<T>
 }
 
-impl Node {
+impl<T> Node<T> {
     fn root() -> Self {
         let mut root = Node {
-            header: null(),
-            up: null(),
-            down: null(),
-            left: null(),
-            right: null()
+            header: null_mut(),
+            up: null_mut(),
+            down: null_mut(),
+            left: null_mut(),
+            right: null_mut()
         };
-        root.up = *mut root;
-        root.down = *mut root;
-        root.left = *mut root;
-        root.right = *mut root;
+        root.up = &mut root;
+        root.down = &mut root;
+        root.left = &mut root;
+        root.right = &mut root;
 
         root
     }
 
-    fn header_node(header: &mut Header, prev: &mut Node) -> Self {
-        let node = Node {
-            header: null(),
-            left: *mut prev,
-            right: null(),
-            up: null(),
-            down: null()
+    fn header_node(header: &mut Header<T>, prev: *mut Node<T>) -> Self {
+        let mut node = Node {
+            header,
+            left: prev,
+            right: null_mut(),
+            up: null_mut(),
+            down: null_mut()
         };
-        node.header = *mut header;
-        node.up = *mut node;
-        node.down = *mut node;
-        prev.right = *mut node;
+        node.up = &mut node;
+        node.down = &mut node;
+        unsafe {
+            (*prev).right = &mut node;
+        }
 
         node
     }
 
-    fn element_node(header: &mut Header, prev: *mut Node) -> Self {
-        let node = {
-            header: *mut header,
-            left: *mut prev,
-            right: null(),
-            up: header.node.up,
-            down: *mut header.node
-        };
-        header.node.up.down = *mut node;
-        header.node.up = *mut node;
-        prev.right = *mut node;
+    fn element_node(header: &mut Header<T>, prev: *mut Node<T>) -> Self {
+        unsafe {
+            let mut node = Node {
+                header,
+                left: prev,
+                right: null_mut(),
+                up: (*header.node).up,
+                down: header.node
+            };
+            (*(*header.node).up).down = &mut node;
+            (*header.node).up = &mut node;
+            (*prev).right = &mut node;
 
-        node
+            node
+        }
     }
 }
 
-struct Header<'a, T> {
-    element: &'a T
-    node: &'a Node,
+struct Header<T> {
+    name: T,
+    node: *mut Node<T>,
     length: u32
 }
 
-#[derive(Clone,Debug)]
-pub struct DLXTable<'a T: Hash + Eq> {
-    elements: HashSet<&'a T>,
-    headers: HashMap<&'a T, Header<'a, T>>
-    nodes: Vec<Node>
+pub struct DLXTable<T: Hash + Eq + Copy> {
+    headers: HashMap<T, Header<T>>,
+    nodes: Vec<Node<T>>
 }
 
-fn create_headers<'a>(root: &mut Node<T>, elements: &HashSet<&'a T>) -> (HashMap<Header<'a, T>>, Vec<Node<T>>)> {
+fn create_headers<T: Hash + Eq + Copy>(root: &mut Node<T>, elements: &HashSet<T>) -> (HashMap<T, Header<T>>, Vec<Node<T>>) {
     let mut headers = HashMap::new();
     let mut nodes = Vec::new();
-    let mut prev = root;
+    let mut prev: *mut Node<T> = root;
     for element in elements {
-        let header = Header {
-            element,
-            node,
+        let mut header = Header {
+            name: *element,
+            node: null_mut(),
             length: 0
         };
-        let node = Node::header_node(&mut header, &mut prev);
-        prev = &mut node;
 
-        headers.insert(element, header);
+        let mut node = Node::header_node(&mut header, prev);
+        header.node = &mut node;
+        prev = &mut node;
         nodes.push(node);
+
+
+        headers.insert(*element, header);
     }
 
     root.left = nodes.last_mut()
-        .map(|(_, node)| *mut node)
-        .unwrap_or(null());
+        .map(|node| node as *mut Node<T>)
+        .unwrap_or(null_mut());
 
     (headers, nodes)
 }
 
-fn create_set_nodes<'a>(headers: &mut HashMap<&T, Header<T>>, set: &HashSet<T>) -> Vec<Node<T>> {
+fn create_set_nodes<T: Hash + Eq>(headers: &mut HashMap<T, Header<T>>, set: &HashSet<T>) -> Vec<Node<T>> {
     let mut nodes = Vec::new();
-    let mut prev = null();
+    let mut prev = null_mut();
     for element in set {
-        let header = headers.get(element).unwrap();
-        let node = Node::element_node(&mut header, prev);
-        prev = *mut node;
-        
-        nodes.push(node);
+        if let Some(mut header) = headers.get_mut(element) {
+            let mut node = Node::element_node(&mut header, prev);
+            prev = &mut node;
+            nodes.push(node);
+        }
     }
 
     nodes
 } 
 
-impl<'a, T: Hash + Eq> DLXTable<'a, T> {
+impl<T: Hash + Eq + Copy> DLXTable<T> {
     pub fn new(sets: &[HashSet<T>]) -> Self {
         let mut root = Node::root();
         let elements = sets
             .iter()
-            .flatten(|set| set.iter())
-            .collect::<HashSet<&T>>::new();
-        let mut (headers, header_nodes) = create_headers(&mut root, &elements); 
+            .flatten()
+            .map(|v| *v)
+            .collect::<HashSet<T>>();
+
+        let (mut headers, mut header_nodes) =
+            create_headers(&mut root, &elements);
         
         let mut nodes = vec![root];
         nodes.append(&mut header_nodes);
@@ -123,7 +134,6 @@ impl<'a, T: Hash + Eq> DLXTable<'a, T> {
         }
         
         DLXTable {
-            elements,
             headers,
             nodes
         }
