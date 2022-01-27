@@ -1,2 +1,4 @@
 *.autosave.xopp
 *.xopp\~
+.idea/*
+.vscode/*

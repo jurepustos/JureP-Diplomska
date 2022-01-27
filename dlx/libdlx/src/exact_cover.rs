@@ -2,25 +2,27 @@ type Element = usize;
 type Label = usize;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-struct OwnedSet{
-    label: Label, 
-    arr: Vec<bool>
-}
+struct OwnedSet(Label, Vec<bool>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Set<'a> {
-    label: Label, 
-    arr: &'a [bool]
-}
+struct Set<'a>(Label, &'a [bool]);
 
 impl OwnedSet {
+    fn arr(&self) -> &Vec<bool> {
+        &self.1
+    }
+
+    fn label(&self) -> Label {
+        self.0
+    }
+
     fn contains_any(&self, elements: &[Element]) -> bool {
         elements.iter()
             .any(|&elem| self.get_bool(elem))
     }
 
     fn get_bool(&self, elem: Element) -> bool {
-        match self.arr.get(elem) {
+        match self.arr().get(elem) {
             None => false,
             Some(&val) => val
         }
@@ -31,17 +33,25 @@ impl IntoIterator for OwnedSet {
     type Item = bool;
     type IntoIter = std::vec::IntoIter<bool>;
     fn into_iter<'a>(self) -> <Self as std::iter::IntoIterator>::IntoIter {
-        self.arr.into_iter()
+        self.1.into_iter()
     }
 }
 
 impl From<(Label, Vec<bool>)> for OwnedSet {
-    fn from((label, arr): (Label, Vec<bool>)) -> Self {
-        OwnedSet { label, arr }
+    fn from(tuple: (Label, Vec<bool>)) -> Self {
+        OwnedSet(tuple.0, tuple.1)
     }
 }
 
 impl<'a> Set<'a> {
+    fn arr(&self) -> &'a [bool] {
+        self.1
+    }
+
+    fn label(&self) -> Label {
+        self.0
+    }
+
     fn difference(&self, other: Set) -> OwnedSet {
         let arr = 
             self.iter()
@@ -50,14 +60,11 @@ impl<'a> Set<'a> {
                 .map(|(_i, &val)| val)
                 .collect();
         
-        OwnedSet { 
-            label: self.label, 
-            arr 
-        }
+        OwnedSet(self.label(), arr)
     }
 
     fn iter(&self) -> <Self as IntoIterator>::IntoIter {
-        self.arr.into_iter()
+        self.arr().into_iter()
     }
 
     fn contains_any(&self, elements: &[Element]) -> bool {
@@ -66,7 +73,7 @@ impl<'a> Set<'a> {
     }
 
     fn get_bool(&self, elem: Element) -> bool {
-        match self.arr.get(elem) {
+        match self.arr().get(elem) {
             None => false,
             Some(&val) => val
         }
@@ -74,29 +81,20 @@ impl<'a> Set<'a> {
 }
 
 impl<'a> From<(Label, &'a [bool])> for Set<'a> {
-    fn from((label,arr): (Label, &'a [bool])) -> Self {
-        Set {
-            label, 
-            arr: &arr
-        }
+    fn from(tuple: (Label, &'a [bool])) -> Self {
+        Set(tuple.0, &tuple.1)
     }
 }
 
 impl<'a> From<(Label, &'a Vec<bool>)> for Set<'a> {
-    fn from((label,arr): (Label, &'a Vec<bool>)) -> Self {
-        Set {
-            label, 
-            arr: &arr
-        }
+    fn from(tuple: (Label, &'a Vec<bool>)) -> Self {
+        Set(tuple.0, &tuple.1)
     }
 }
 
 impl<'a> From<&'a OwnedSet> for Set<'a> {
     fn from(owned_set: &'a OwnedSet) -> Self { 
-        Set { 
-            label: owned_set.label,
-            arr: &owned_set.arr
-        }
+        Set(owned_set.label(), &owned_set.arr())
     }
 }
 
@@ -104,7 +102,7 @@ impl<'a> IntoIterator for Set<'a> {
     type Item = &'a bool;
     type IntoIter = std::slice::Iter<'a, bool>;
     fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
-        self.arr.into_iter()
+        self.arr().into_iter()
     }
 }
 
@@ -128,7 +126,7 @@ fn vectors_to_sets<'a>(vectors: &'a [Vec<bool>]) -> Vec<Set<'a>> {
 // Returns slices that belong to given sets
 fn set_slices<'a>(sets: &[Set<'a>]) -> Vec<&'a [bool]> {
     sets.iter()
-        .map(|&set| set.arr)
+        .map(|&set| set.arr())
         .collect()
 }
 
@@ -205,7 +203,7 @@ fn least_sets_element<'a>(sets: &[Set<'a>]) -> Option<Element> {
 fn count_elements(sets: &[Set]) -> usize {
     let max_opt = 
         sets.iter()
-            .map(|&set| set.arr.len())
+            .map(|&set| set.arr().len())
             .max();
 
     match max_opt {
@@ -235,15 +233,15 @@ fn including_sets<'a>(sets: &[Set<'a>], elem: Element) -> Vec<Set<'a>> {
 // any of the elements in the given cover set  
 fn cover<'a>(sets: &[Set<'a>], cover_set: Set<'a>) -> Vec<OwnedSet> {
     let cover_elements = set_elements(cover_set);
-    let all_elements: Vec<Element> = (0..cover_set.arr.len()).collect();
+    let all_elements: Vec<Element> = (0..cover_set.arr().len()).collect();
     sets.iter()
         .filter(|set| 
-            set.label == cover_set.label ||
+            set.label() == cover_set.label() ||
             !set.contains_any(&cover_elements))
         .map(|set| 
             set.difference(cover_set))
         .filter(|owned_set| 
-            owned_set.label == cover_set.label ||
+            owned_set.label() == cover_set.label() ||
             owned_set.contains_any(&all_elements))
         .collect()
 }
@@ -260,14 +258,14 @@ fn set_elements(set: Set) -> Vec<Element> {
 // Returns labels in the given array of Sets
 fn labels(sets: &[Set]) -> Vec<Label> {
     sets.iter()
-        .map(|&set| set.label)
+        .map(|&set| set.label())
         .collect()
 }
 
 // Returns Sets with the given labels
 fn labeled_sets<'a>(sets: &[Set<'a>], labels: &[Label]) -> Vec<Set<'a>> {
     sets.iter()
-        .filter(|&set| labels.contains(&set.label))
+        .filter(|&set| labels.contains(&set.label()))
         .map(|&set| set)
         .collect()
 }
@@ -318,12 +316,12 @@ mod tests {
         ];
 
         let sets = vec![
-            Set::from((0, &arrays[0])),
-            Set::from((1, &arrays[1])),
-            Set::from((2, &arrays[2])),
-            Set::from((3, &arrays[3])),
-            Set::from((4, &arrays[4])),
-            Set::from((5, &arrays[5]))
+            Set(0, &arrays[0]),
+            Set(1, &arrays[1]),
+            Set(2, &arrays[2]),
+            Set(3, &arrays[3]),
+            Set(4, &arrays[4]),
+            Set(5, &arrays[5])
         ];
 
         let selected_elem = least_sets_element(&sets).unwrap();
@@ -338,11 +336,11 @@ mod tests {
 
         let cover1: Vec<OwnedSet> = cover(&sets, sets[0]);
         let sets1: Vec<OwnedSet> = vec![
-            OwnedSet::from((0, vec![false, false, false, false])),
-            OwnedSet::from((1, vec![true, true, true, true])),
-            OwnedSet::from((3, vec![false, true, true, true])),
-            OwnedSet::from((4, vec![false, false, true, true])),
-            OwnedSet::from((5, vec![true, true, false, false]))
+            OwnedSet(0, vec![false, false, false, false]),
+            OwnedSet(1, vec![true, true, true, true]),
+            OwnedSet(3, vec![false, true, true, true]),
+            OwnedSet(4, vec![false, false, true, true]),
+            OwnedSet(5, vec![true, true, false, false])
         ];
         assert_eq!(sets1, cover1);
 
@@ -352,7 +350,7 @@ mod tests {
                 .collect();
         let cover11: Vec<OwnedSet> = cover(&refsets1, refsets1[1]);
         let sets11: Vec<OwnedSet> = vec![
-            OwnedSet::from((1, vec![]))
+            OwnedSet(1, vec![])
         ];
         assert_eq!(sets11, cover11);
         
@@ -374,16 +372,16 @@ mod tests {
 
         let cover12: Vec<OwnedSet> = cover(&refsets1, refsets1[4]);
         let sets12: Vec<OwnedSet> = vec![
-            OwnedSet::from((4, vec![true, true])),
-            OwnedSet::from((5, vec![false, false]))
+            OwnedSet(4, vec![true, true]),
+            OwnedSet(5, vec![false, false])
         ];
         assert_eq!(sets12, cover12);
 
         let cover2: Vec<OwnedSet> = cover(&sets, sets[2]);
         let sets2: Vec<OwnedSet> = vec![
-            OwnedSet::from((2, vec![false, false, false])),
-            OwnedSet::from((3, vec![true, true, true])),
-            OwnedSet::from((4, vec![false, true, true]))
+            OwnedSet(2, vec![false, false, false]),
+            OwnedSet(3, vec![true, true, true]),
+            OwnedSet(4, vec![false, true, true])
         ];
         assert_eq!(sets2, cover2);
 
@@ -393,7 +391,7 @@ mod tests {
                 .collect();
         let cover21: Vec<OwnedSet> = cover(&refsets2, refsets2[1]);
         let sets21: Vec<OwnedSet> = vec![
-            OwnedSet::from((3, vec![]))
+            OwnedSet(3, vec![])
         ];
         assert_eq!(sets21, cover21);
     }
@@ -489,6 +487,7 @@ mod tests {
     }
         
     #[test]
+
     fn no_solutions() {
         let sets = vec![
             vec![false, true, false, true],
