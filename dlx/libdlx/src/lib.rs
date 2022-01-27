@@ -1,6 +1,5 @@
 mod dlx_table;
 mod dlx;
-mod unsafe_dlx_table2;
-mod unsafe_dlx_table;
+mod dlx_table2;
 
 pub use dlx::{dlx,exact_cover};
