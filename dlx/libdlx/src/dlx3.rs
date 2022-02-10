@@ -202,10 +202,5 @@ impl<'a, T: Eq + Hash> DLXTable<'a, T> {
     }
 }
 
-pub fn dlx<T>(sets: &Vec<Vec<T>>)
-    where T: Eq + Hash {
-
-}
-
 
 

@@ -29,21 +29,32 @@ fn get_unique_items<T>(sets: &Vec<Vec<T>>) -> Vec<T>
         .collect::<Vec<T>>()
 }
 
+fn get_item_set<T>(index_set: Vec<usize>, items: &Vec<T>) -> Vec<T>
+    where T: Copy {
+    index_set
+        .into_iter()
+        .map(|i| items.get(i).cloned().into_iter())
+        .flatten()
+        .collect()
+}
+
+fn get_item_cover<T>(index_cover: Vec<Vec<usize>>, items: &Vec<T>) -> Vec<Vec<T>>
+    where T: Copy {
+    index_cover
+        .into_iter()
+        .map(|set| get_item_set(set, items))
+        .collect()
+}
+
 pub fn dlx<T>(sets: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
     where T: Hash + Eq + Copy {
-    let unique_items = get_unique_items(sets);
-    let index_sets = make_index_sets(sets, &unique_items);
+    let items = get_unique_items(sets);
+    let index_sets = make_index_sets(sets, &items);
     let index_covers = dlx_run(index_sets);
     index_covers
         .into_iter()
-        .map(|cover| cover
-            .into_iter()
-            .map(|set| set
-                .into_iter()
-                .map(|i| unique_items[i])
-                .collect::<Vec<_>>())
-            .collect::<Vec<_>>())
-        .collect::<Vec<_>>()
+        .map(|cover| get_item_cover(cover, &items))
+        .collect()
 }
 
 #[derive(Clone,Copy)]

@@ -3,7 +3,7 @@ use Node::RootNode;
 use Node::SpacerNode;
 use Node::ItemNode;
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 enum Node {
     RootNode(Root),
     HeaderNode(Header),
@@ -11,34 +11,34 @@ enum Node {
     ItemNode(Item)
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
-struct Root {
-    prev: usize,
-    next: usize
-}
-
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 struct ItemHeader {
     value: usize,
     prev: usize,
     next: usize
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+struct Root {
+    prev: usize,
+    next: usize
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 struct Header {
     first: usize,
     last: usize,
     length: usize
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 struct Item {
     header: usize,
     above: usize,
     below: usize
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 struct Spacer {
     prev: usize,
     next: usize
@@ -144,6 +144,7 @@ impl Node {
     }
 }
 
+#[derive(Clone,PartialEq,Eq,Debug)]
 struct NodeList(Vec<Node>);
 
 impl NodeList {
@@ -212,8 +213,8 @@ impl NodeList {
     }
 }
 
+#[derive(Clone,PartialEq,Eq,Debug)]
 pub struct DLXTable {
-    item_count: usize,
     item_headers: Vec<ItemHeader>,
     nodes: NodeList
 }
@@ -270,46 +271,73 @@ fn add_item_node(nodes: &mut Vec<Node>, current: usize, header_index: usize) {
     }
 }
 
-impl DLXTable {
-    pub fn new(sets: Vec<Vec<usize>>) -> Self {
-        let item_count =
-            *sets
-            .iter()
-            .flatten()
-            .max()
-            .unwrap_or(&0);
-
-        let node_count = sets
-            .iter()
-            .flatten()
-            .map(|_| 1)
-            .sum::<usize>() + 1 + item_count;
-
-        let mut item_headers = Vec::with_capacity(item_count+1);
-        item_headers.push(ItemHeader {
+fn make_root_header(item_count: usize) -> ItemHeader {
+    if item_count > 0 {
+        ItemHeader {
             value: 0,
             prev: item_count,
             next: 1
-        });
+        }
+    }
+    else {
+        ItemHeader {
+            value: 0,
+            prev: item_count,
+            next: 0
+        }
+    }
+}
+
+fn make_root_node(item_count: usize) -> Node {
+    if item_count > 0 {
+        RootNode(Root {
+            prev: item_count,
+            next: 1
+        })
+    }
+    else {
+        RootNode(Root {
+            prev: 0,
+            next: 0
+        })
+    }
+}
+fn get_item_count(sets: &Vec<Vec<usize>>) -> usize {
+    *sets.iter()
+        .flatten()
+        .max()
+        .unwrap_or(&0)
+}
+
+fn get_item_instance_count(sets: &Vec<Vec<usize>>) -> usize {
+    sets.iter()
+        .flatten()
+        .map(|_| 1)
+        .sum::<usize>()
+}
+
+impl DLXTable {
+    pub fn new(sets: Vec<Vec<usize>>) -> Self {
+        let item_count = get_item_count(&sets);
+        let node_count = get_item_instance_count(&sets) + 1 + item_count;
+
+        let mut item_headers = Vec::with_capacity(item_count+1);
+        item_headers.push(make_root_header(item_count));
         for val in 0..item_count {
             let node_index = val+1;
             item_headers.push(ItemHeader {
-                value: val,
+                value: node_index,
                 prev: node_index-1,
                 next: (node_index+1) % (item_count+1)
             });
         }
 
         let mut nodes = Vec::with_capacity(node_count);
-        nodes.push(RootNode(Root {
-            prev: item_count,
-            next: 1
-        }));
+        nodes.push(make_root_node(item_count));
         append_headers(&mut nodes, item_count);
         append_sets(&mut nodes, &sets);
 
         DLXTable {
-            item_count,
             item_headers,
             nodes: NodeList(nodes)
         }
@@ -457,5 +485,33 @@ impl DLXTable {
 }
 
 
+
+#[cfg(test)]
+mod creation_tests {
+    use super::*;
+    use Node::RootNode;
+    use Node::SpacerNode;
+    use Node::HeaderNode;
+    use Node::ItemNode;
+
+    #[test]
+    fn empty() {
+        let table = DLXTable::new(Vec::new());
+        let expected = DLXTable {
+            item_headers: vec![ItemHeader {
+                value: 0,
+                prev: 0,
+                next: 0
+            }],
+            nodes: NodeList(vec![
+                RootNode(Root {
+                    prev: 0,
+                    next: 0
+                })
+            ])
+        };
+        assert_eq!(table, expected);
+    }
+}
 
 
