@@ -1,6 +1,4 @@
 use crate::dlx_table::DLXTable;
-use std::mem;
-use std::collections::HashSet;
 use std::iter::Iterator;
 
 // Finds all exact covers of the given sets with the DLX algorithm.
@@ -145,6 +143,20 @@ mod tests {
         let covers = dlx(&sets);
 
         let expected = vec![vec![0,3,4]];
+        assert_eq!(expected, covers);
+    }
+
+    #[test]
+    fn multiple_solutions() {
+        let sets = vec![
+            vec![0,1,2],
+            vec![3,4,5,6],
+            vec![3,4],
+            vec![5,6]
+        ];
+        let covers = dlx(&sets);
+
+        let expected = vec![vec![0,1],vec![0,2,3]];
         assert_eq!(expected, covers);
     }
 }
