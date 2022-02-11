@@ -1,6 +1,3 @@
-use std::alloc::Allocator;
-use std::borrow::{Borrow, BorrowMut};
-use std::ops::Deref;
 use Node::HeaderNode;
 use Node::SpacerNode;
 use Node::ItemNode;
@@ -255,6 +252,10 @@ fn add_item_node(nodes: &mut Vec<Node>, current: usize, header_index: usize) {
         }
         header.last = current;
         header.length += 1;
+        if let Some(ItemNode(above_item)) = nodes.get_mut(above) {
+            above_item.below = current;
+        }
+
         let item_node = ItemNode(Item {
             header: header_index,
             above,
@@ -443,327 +444,334 @@ impl DLXTable {
     }
 }
 
-#[derive(PartialEq,Eq,Clone,Copy,Debug)]
-struct StaticDLXTable<const H: usize, const N: usize> {
-    item_headers: [ItemHeader; H],
-    nodes: [Node; N]
-}
 
-impl<const H: usize, const N: usize> PartialEq<StaticDLXTable<H,N>> for DLXTable {
-    fn eq(&self, other: &StaticDLXTable<H, N>) -> bool {
-        self.item_headers.eq(&other.item_headers)
-            && self.nodes.0.eq(&other.nodes)
-    }
-}
-
-impl<const H: usize, const N: usize> PartialEq<DLXTable> for StaticDLXTable<H,N> {
-    fn eq(&self, other: &DLXTable) -> bool {
-        other.item_headers.eq(&self.item_headers)
-            && other.nodes.0.eq(&self.nodes)
-    }
-}
-
-#[cfg(test)]
-mod creation_tests {
-    use std::convert::TryInto;
+// Tests
+mod tests {
     use super::*;
-    use Node::SpacerNode;
-    use Node::HeaderNode;
-    use Node::ItemNode;
 
-    const EMPTY_TABLE: StaticDLXTable<1,0> = StaticDLXTable {
-        item_headers: [ItemHeader {
-            value: usize::MAX,
-            prev: 0,
-            next: 0
-        }],
-        nodes: []
-    };
+    fn make_testing_table() -> DLXTable {
+            DLXTable {
+                item_headers: make_item_headers(5),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 6,
+                        last: 6,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 11,
+                        last: 11,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 7,
+                        last: 12,
+                        length: 2
+                    }),
+                    HeaderNode(Header {
+                        first: 8,
+                        last: 15,
+                        length: 2
+                    }),
+                    HeaderNode(Header {
+                        first: 9,
+                        last: 16,
+                        length: 3
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 9
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 2,
+                        below: 12
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 3,
+                        below: 15
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 4,
+                        below: 13
+                    }),
+                    SpacerNode(Spacer {
+                        prev: 6,
+                        next: 13
+                    }),
+                    ItemNode(Item {
+                        header: 1,
+                        above: 1,
+                        below: 1
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 7,
+                        below: 2
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 9,
+                        below: 16
+                    }),
+                    SpacerNode(Spacer {
+                        prev: 11,
+                        next: 16
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 8,
+                        below: 3
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 13,
+                        below: 4
+                    })
+                ])
+            }
+        }
 
-    fn item_headers_array<const COUNT: usize>() -> [ItemHeader; COUNT] {
-       make_item_headers(COUNT-1)
-           .as_slice()
-           .try_into()
-           .unwrap()
+    #[cfg(test)]
+    mod creation_tests {
+        use std::convert::TryInto;
+        use super::super::*;
+        use Node::SpacerNode;
+        use Node::HeaderNode;
+        use Node::ItemNode;
+
+        fn item_headers_array<const COUNT: usize>() -> [ItemHeader; COUNT] {
+           make_item_headers(COUNT-1)
+               .as_slice()
+               .try_into()
+               .unwrap()
+        }
+
+        fn item_node_count(nodes: &[Node]) -> usize {
+            nodes.iter()
+                .filter(|node| node.get_item().is_some())
+                .map(|_| 1)
+                .sum()
+        }
+
+        fn spacer_count(nodes: &[Node]) -> usize {
+            nodes.iter()
+                .filter(|node| node.get_spacer().is_some())
+                .map(|_| 1)
+                .sum()
+        }
+
+        fn header_count(nodes: &[Node]) -> usize {
+            nodes.iter()
+                .filter(|node| node.get_header().is_some())
+                .map(|_| 1)
+                .sum()
+        }
+
+        fn assert_equal(table: DLXTable, expected: DLXTable) {
+            assert_eq!(table.item_headers.len(), expected.item_headers.len());
+            assert_eq!(header_count(&table.nodes.0), header_count(&expected.nodes.0));
+            assert_eq!(spacer_count(&table.nodes.0), spacer_count(&expected.nodes.0));
+            assert_eq!(item_node_count(&table.nodes.0), item_node_count(&expected.nodes.0));
+            assert_eq!(table, expected);
+        }
+
+        #[test]
+        fn empty() {
+            let table = DLXTable::new(Vec::new());
+            let expected = DLXTable {
+                item_headers: make_item_headers(0),
+                nodes: NodeList(Vec::new())
+            };
+            assert_equal(table, expected);
+        }
+
+        #[test]
+        fn empty_set() {
+            let table = DLXTable::new(vec![Vec::new()]);
+            let expected = DLXTable {
+                item_headers: make_item_headers(0),
+                nodes: NodeList(Vec::new())
+            };
+            assert_equal(table, expected);
+        }
+
+        #[test]
+        fn one_element() {
+            let table = DLXTable::new(vec![vec![0]]);
+            let expected = DLXTable {
+                item_headers: make_item_headers(1),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 2,
+                        last: 2,
+                        length: 1
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 2
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    })])
+            };
+            assert_equal(table, expected);
+        }
+
+        #[test]
+        fn multiple_elements() {
+            let table = DLXTable::new(vec![vec![0,1,2,3]]);
+            let expected = DLXTable {
+                item_headers: make_item_headers(4),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 5,
+                        last: 5,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 6,
+                        last: 6,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 7,
+                        last: 7,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 8,
+                        last: 8,
+                        length: 1
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 8
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    }),
+                    ItemNode(Item {
+                        header: 1,
+                        above: 1,
+                        below: 1
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 2,
+                        below: 2
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 3,
+                        below: 3
+                    })
+                ])
+            };
+            assert_equal(table, expected);
+        }
+
+        #[test]
+        fn disjoint_test() {
+            let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]]);
+            let expected = DLXTable {
+                item_headers: make_item_headers(5),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 6,
+                        last: 6,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 7,
+                        last: 7,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 8,
+                        last: 8,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 10,
+                        last: 10,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 11,
+                        last: 11,
+                        length: 1
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 8
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    }),
+                    ItemNode(Item {
+                        header: 1,
+                        above: 1,
+                        below: 1
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 2,
+                        below: 2
+                    }),
+                    SpacerNode(Spacer {
+                        prev: 6,
+                        next: 11
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 3,
+                        below: 3
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 4,
+                        below: 4
+                    })
+                ])
+            };
+            assert_equal(table, expected);
+        }
+
+        #[test]
+        fn overlapping_sets() {
+            let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]]);
+            let expected = make_testing_table();
+            assert_equal(table, expected);
+        }
     }
 
-    fn item_node_count(nodes: &[Node]) -> usize {
-        nodes.iter()
-            .filter(|node| node.get_item().is_some())
-            .map(|_| 1)
-            .sum()
+    #[cfg(test)]
+    mod cover_tests {
+        use super::*;
+        use super::super::*;
+
+        #[test]
+        fn test_cover() {
+            let table = make_testing_table();
+            todo!()
+        }
     }
 
-    fn spacer_count(nodes: &[Node]) -> usize {
-        nodes.iter()
-            .filter(|node| node.get_spacer().is_some())
-            .map(|_| 1)
-            .sum()
-    }
-
-    fn header_count(nodes: &[Node]) -> usize {
-        nodes.iter()
-            .filter(|node| node.get_header().is_some())
-            .map(|_| 1)
-            .sum()
-    }
-
-    #[test]
-    fn empty() {
-        let table = DLXTable::new(Vec::new());
-        assert_eq!(table, EMPTY_TABLE);
-    }
-
-    #[test]
-    fn empty_set() {
-        let table = DLXTable::new(vec![Vec::new()]);
-        assert_eq!(table, EMPTY_TABLE);
-    }
-
-    #[test]
-    fn one_element() {
-        let table = DLXTable::new(vec![vec![0]]);
-        let expected = StaticDLXTable {
-            item_headers: item_headers_array::<2>(),
-            nodes: [
-                HeaderNode(Header {
-                    first: 2,
-                    last: 2,
-                    length: 1
-                }),
-                SpacerNode(Spacer {
-                    prev: usize::MAX,
-                    next: 2
-                }),
-                ItemNode(Item {
-                    header: 0,
-                    above: 0,
-                    below: 0
-                })]
-        };
-        assert_eq!(table, expected);
-    }
-
-    #[test]
-    fn multiple_elements() {
-        let table = DLXTable::new(vec![vec![0,1,2,3]]);
-        let expected = StaticDLXTable {
-            item_headers: item_headers_array::<5>(),
-            nodes: [
-                HeaderNode(Header {
-                    first: 5,
-                    last: 5,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 6,
-                    last: 6,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 7,
-                    last: 7,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 8,
-                    last: 8,
-                    length: 1
-                }),
-                SpacerNode(Spacer {
-                    prev: usize::MAX,
-                    next: 8
-                }),
-                ItemNode(Item {
-                    header: 0,
-                    above: 0,
-                    below: 0
-                }),
-                ItemNode(Item {
-                    header: 1,
-                    above: 1,
-                    below: 1
-                }),
-                ItemNode(Item {
-                    header: 2,
-                    above: 2,
-                    below: 2
-                }),
-                ItemNode(Item {
-                    header: 3,
-                    above: 3,
-                    below: 3
-                })
-            ]
-        };
-        assert_eq!(table, expected);
-    }
-
-    #[test]
-    fn disjoint_test() {
-        let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]]);
-        let expected = StaticDLXTable {
-            item_headers: item_headers_array::<6>(),
-            nodes: [
-                HeaderNode(Header {
-                    first: 6,
-                    last: 6,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 7,
-                    last: 7,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 8,
-                    last: 8,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 10,
-                    last: 10,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 11,
-                    last: 11,
-                    length: 1
-                }),
-                SpacerNode(Spacer {
-                    prev: usize::MAX,
-                    next: 8
-                }),
-                ItemNode(Item {
-                    header: 0,
-                    above: 0,
-                    below: 0
-                }),
-                ItemNode(Item {
-                    header: 1,
-                    above: 1,
-                    below: 1
-                }),
-                ItemNode(Item {
-                    header: 2,
-                    above: 2,
-                    below: 2
-                }),
-                SpacerNode(Spacer {
-                    prev: 6,
-                    next: 11
-                }),
-                ItemNode(Item {
-                    header: 3,
-                    above: 3,
-                    below: 3
-                }),
-                ItemNode(Item {
-                    header: 4,
-                    above: 4,
-                    below: 4
-                })
-            ]
-        };
-        assert_eq!(table, expected);
-    }
-
-    #[test]
-    fn overlapping_sets() {
-        let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]]);
-        let expected = StaticDLXTable {
-            item_headers: item_headers_array::<6>(),
-            nodes: [
-                HeaderNode(Header {
-                    first: 6,
-                    last: 6,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 11,
-                    last: 11,
-                    length: 1
-                }),
-                HeaderNode(Header {
-                    first: 7,
-                    last: 12,
-                    length: 2
-                }),
-                HeaderNode(Header {
-                    first: 8,
-                    last: 15,
-                    length: 2
-                }),
-                HeaderNode(Header {
-                    first: 9,
-                    last: 16,
-                    length: 3
-                }),
-                SpacerNode(Spacer {
-                    prev: usize::MAX,
-                    next: 9
-                }),
-                ItemNode(Item {
-                    header: 0,
-                    above: 0,
-                    below: 0
-                }),
-                ItemNode(Item {
-                    header: 2,
-                    above: 2,
-                    below: 12
-                }),
-                ItemNode(Item {
-                    header: 3,
-                    above: 3,
-                    below: 15
-                }),
-                ItemNode(Item {
-                    header: 4,
-                    above: 4,
-                    below: 13
-                }),
-                SpacerNode(Spacer {
-                    prev: 6,
-                    next: 13
-                }),
-                ItemNode(Item {
-                    header: 1,
-                    above: 1,
-                    below: 1
-                }),
-                ItemNode(Item {
-                    header: 2,
-                    above: 7,
-                    below: 2
-                }),
-                ItemNode(Item {
-                    header: 4,
-                    above: 9,
-                    below: 16
-                }),
-                SpacerNode(Spacer {
-                    prev: 11,
-                    next: 16
-                }),
-                ItemNode(Item {
-                    header: 3,
-                    above: 8,
-                    below: 3
-                }),
-                ItemNode(Item {
-                    header: 4,
-                    above: 13,
-                    below: 4
-                })
-            ]
-        };
-        assert_eq!(table.item_headers.len(), expected.item_headers.len());
-        assert_eq!(header_count(&table.nodes.0), header_count(&expected.nodes));
-        assert_eq!(spacer_count(&table.nodes.0), spacer_count(&expected.nodes));
-        assert_eq!(item_node_count(&table.nodes.0), item_node_count(&expected.nodes));
-        assert_eq!(table, expected);
-    }
 }
+
 
 
