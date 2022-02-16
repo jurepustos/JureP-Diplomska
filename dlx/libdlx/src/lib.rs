@@ -1,3 +1,5 @@
+extern crate core;
+
 mod dlx_table;
 mod dlx;
 mod dlx_table2;

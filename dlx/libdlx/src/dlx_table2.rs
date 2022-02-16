@@ -1,3 +1,6 @@
+use std::collections::btree_set::BTreeSet;
+use std::collections::HashSet;
+use std::iter::FromIterator;
 use Node::HeaderNode;
 use Node::SpacerNode;
 use Node::ItemNode;
@@ -179,7 +182,8 @@ impl NodeList {
 #[derive(Clone,PartialEq,Eq,Debug)]
 pub struct DLXTable {
     item_headers: Vec<ItemHeader>,
-    nodes: NodeList
+    nodes: NodeList,
+    secondary_items: BTreeSet<usize>
 }
 
 fn make_root_header(item_count: usize) -> ItemHeader {
@@ -281,7 +285,7 @@ fn get_item_instance_count(sets: &Vec<Vec<usize>>) -> usize {
 }
 
 impl DLXTable {
-    pub fn new(sets: Vec<Vec<usize>>) -> Self {
+    pub fn new(sets: Vec<Vec<usize>>, secondary_items: Vec<usize>) -> Self {
         let item_count = get_item_count(&sets);
         let node_count = get_item_instance_count(&sets) + 1 + item_count;
 
@@ -293,66 +297,79 @@ impl DLXTable {
 
         DLXTable {
             item_headers,
-            nodes: NodeList(nodes)
+            nodes: NodeList(nodes),
+            secondary_items: BTreeSet::from_iter(secondary_items)
         }
     }
 
-    pub fn cover(&mut self, index: usize) {
-        if let Some(header) = self.nodes.get_header(index) {
+    pub fn cover(&mut self, val: usize) {
+        if let Some(header) = self.nodes.get_header(val) {
             let mut i = header.first;
             while let Some(item) = self.nodes.get_item(i) {
                 self.hide(i);
                 i = item.below
             }
 
-            let item_header = self.item_headers.get(index+1).cloned().unwrap();
+            let item_header = self.item_headers.get(val+1).cloned().unwrap();
+            let prev = item_header.prev;
+            let next = item_header.next;
 
-            let mut prev_header = self.item_headers.get_mut(item_header.prev).unwrap();
-            prev_header.next = item_header.next;
+            let mut prev_header = self.item_headers.get_mut(prev).unwrap();
+            prev_header.next = next;
 
-            let mut next_header = self.item_headers.get_mut(item_header.next).unwrap();
-            next_header.prev = item_header.prev;
+            let mut next_header = self.item_headers.get_mut(next).unwrap();
+            next_header.prev = prev;
         }
     }
 
     fn hide(&mut self, index: usize) {
-        let mut q = index+1;
-        while let Some(ItemNode(item)) = self.nodes.get(q) {
-            self.nodes.get_mut(item.above).unwrap().set_below(item.below);
-            self.nodes.get_mut(item.below).unwrap().set_above(item.above);
-            let header = self.nodes.get_header_mut(item.header).unwrap();
-            header.length -= 1;
-            q += 1;
+        let mut i = index+1;
+        while i != index {
+            if let Some(ItemNode(item)) = self.nodes.get(i) {
+                self.nodes.get_mut(item.above).unwrap().set_below(item.below);
+                self.nodes.get_mut(item.below).unwrap().set_above(item.above);
+                let header = self.nodes.get_header_mut(item.header).unwrap();
+                header.length -= 1;
+                i += 1;
+            }
+            else if let Some(SpacerNode(spacer)) = self.nodes.get(i) {
+                i = spacer.prev;
+            }
         }
     }
 
-    pub fn uncover(&mut self, index: usize) {
-        if let Some(item_header) = self.item_headers.get(index+1).cloned() {
+    pub fn uncover(&mut self, val: usize) {
+        if let Some(item_header) = self.item_headers.get(val+1).cloned() {
             let prev = item_header.prev;
             let prev_header = self.item_headers.get_mut(prev).unwrap();
-            prev_header.next = index;
+            prev_header.next = val+1;
 
             let next = item_header.next;
             let next_header = self.item_headers.get_mut(next).unwrap();
-            next_header.prev = index;
+            next_header.prev = val+1;
 
-            let header = self.nodes.get_header(index).unwrap();
-            let mut i = header.first;
+            let header = self.nodes.get_header(val).unwrap();
+            let mut i = header.last;
             while let Some(item) = self.nodes.get_item(i) {
-                self.unhide(index);
-                i = item.below;
+                self.unhide(i);
+                i = item.above;
             }
         }
     }
 
     fn unhide(&mut self, index: usize) {
-        let mut q = index+1;
-        while let Some(ItemNode(item)) = self.nodes.get(q) {
-            self.nodes.get_mut(item.above).unwrap().set_below(q);
-            self.nodes.get_mut(item.below).unwrap().set_above(q);
-            let header = self.nodes.get_header_mut(item.header).unwrap();
-            header.length += 1;
-            q += 1;
+        let mut i = index-1;
+        while i != index {
+            if let Some(ItemNode(item)) = self.nodes.get(i) {
+                self.nodes.get_mut(item.above).unwrap().set_below(i);
+                self.nodes.get_mut(item.below).unwrap().set_above(i);
+                let header = self.nodes.get_header_mut(item.header).unwrap();
+                header.length += 1;
+                i -= 1;
+            }
+            else if let Some(SpacerNode(spacer)) = self.nodes.get(i) {
+                i = spacer.next;
+            }
         }
     }
 
@@ -362,8 +379,10 @@ impl DLXTable {
         let mut i = root.next;
         while i != 0 {
             if let Some(item_header) = self.item_headers.get(i) {
-                items.push(i-1);
-                i = item_header.next;
+                if !self.secondary_items.contains(i-1) {
+                    items.push(i-1);
+                    i = item_header.next;
+                }
             }
             else {
                 return Vec::new();
@@ -449,6 +468,7 @@ impl DLXTable {
 mod tests {
     use super::*;
 
+    // 0234 124 34
     fn make_testing_table() -> DLXTable {
             DLXTable {
                 item_headers: make_item_headers(5),
@@ -535,24 +555,18 @@ mod tests {
                         above: 13,
                         below: 4
                     })
-                ])
+                ]),
+                secondary_items: BTreeSet::new()
             }
         }
 
     #[cfg(test)]
     mod creation_tests {
-        use std::convert::TryInto;
         use super::super::*;
+        use super::*;
         use Node::SpacerNode;
         use Node::HeaderNode;
         use Node::ItemNode;
-
-        fn item_headers_array<const COUNT: usize>() -> [ItemHeader; COUNT] {
-           make_item_headers(COUNT-1)
-               .as_slice()
-               .try_into()
-               .unwrap()
-        }
 
         fn item_node_count(nodes: &[Node]) -> usize {
             nodes.iter()
@@ -585,27 +599,29 @@ mod tests {
 
         #[test]
         fn empty() {
-            let table = DLXTable::new(Vec::new());
+            let table = DLXTable::new(Vec::new(), Vec::new());
             let expected = DLXTable {
                 item_headers: make_item_headers(0),
-                nodes: NodeList(Vec::new())
+                nodes: NodeList(Vec::new()),
+                secondary_items: BTreeSet::new()
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn empty_set() {
-            let table = DLXTable::new(vec![Vec::new()]);
+            let table = DLXTable::new(vec![Vec::new()], vec![new]);
             let expected = DLXTable {
                 item_headers: make_item_headers(0),
-                nodes: NodeList(Vec::new())
+                nodes: NodeList(Vec::new()),
+                secondary_items: BTreeSet::new()
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn one_element() {
-            let table = DLXTable::new(vec![vec![0]]);
+            let table = DLXTable::new(vec![vec![0]], Vec::new());
             let expected = DLXTable {
                 item_headers: make_item_headers(1),
                 nodes: NodeList(vec![
@@ -622,14 +638,15 @@ mod tests {
                         header: 0,
                         above: 0,
                         below: 0
-                    })])
+                    })]),
+                secondary_items: BTreeSet::new()
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn multiple_elements() {
-            let table = DLXTable::new(vec![vec![0,1,2,3]]);
+            let table = DLXTable::new(vec![vec![0,1,2,3]], Vec::new());
             let expected = DLXTable {
                 item_headers: make_item_headers(4),
                 nodes: NodeList(vec![
@@ -677,14 +694,15 @@ mod tests {
                         above: 3,
                         below: 3
                     })
-                ])
+                ]),
+                secondary_items: BTreeSet::new()
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn disjoint_test() {
-            let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]]);
+            let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]], Vec::new());
             let expected = DLXTable {
                 item_headers: make_item_headers(5),
                 nodes: NodeList(vec![
@@ -746,14 +764,15 @@ mod tests {
                         above: 4,
                         below: 4
                     })
-                ])
+                ]),
+                secondary_items: BTreeSet::new()
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn overlapping_sets() {
-            let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]]);
+            let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]], Vec::new());
             let expected = make_testing_table();
             assert_equal(table, expected);
         }
@@ -764,13 +783,65 @@ mod tests {
         use super::*;
         use super::super::*;
 
+        fn assert_covered_header(table: &DLXTable, index: usize) {
+            let prev_index = if index >= 1 {
+                index-1
+            }
+            else {
+                table.item_headers.len()-1
+            };
+            let next_index = if index < table.item_headers.len()-1 {
+                index+1
+            }
+            else {
+                0
+            };
+            let prev_header = table.item_headers[prev_index];
+            let header = table.item_headers[index];
+            let next_header = table.item_headers[next_index];
+
+            assert_eq!(prev_header.next, next_index);
+            assert_eq!(next_header.prev, prev_index);
+            assert_eq!(header.prev, prev_index);
+            assert_eq!(header.next, next_index);
+        }
+
         #[test]
         fn test_cover() {
-            let table = make_testing_table();
-            todo!()
+            // 0234 124 34
+            let mut table = make_testing_table();
+            table.cover(1);
+
+            assert_covered_header(&table, 2);
+            assert_eq!(table.nodes.get_header(2).unwrap().first, 7);
+            assert_eq!(table.nodes.get_header(2).unwrap().last, 7);
+
+            assert_eq!(table.nodes.get_header(4).unwrap().first, 9);
+            assert_eq!(table.nodes.get_header(4).unwrap().last, 16);
+
+            assert_eq!(table.nodes.get_item(7).unwrap().below, 2);
+            assert_eq!(table.nodes.get_item(7).unwrap().above, 2);
+
+            assert_eq!(table.nodes.get_item(9).unwrap().below, 16);
+            assert_eq!(table.nodes.get_item(9).unwrap().above, 4);
+
+            assert_eq!(table.nodes.get_item(12).unwrap().below, 2);
+            assert_eq!(table.nodes.get_item(12).unwrap().above, 7);
+
+            assert_eq!(table.nodes.get_item(13).unwrap().below, 16);
+            assert_eq!(table.nodes.get_item(13).unwrap().above, 9);
+
+        }
+
+        #[test]
+        fn test_uncover() {
+            let original_table = make_testing_table();
+            let mut table = make_testing_table();
+            table.cover(1);
+            table.uncover(1);
+            assert_eq!(table, original_table);
         }
     }
-
 }
 
 
