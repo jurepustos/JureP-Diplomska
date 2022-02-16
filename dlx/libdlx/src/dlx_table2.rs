@@ -183,7 +183,7 @@ impl NodeList {
 pub struct DLXTable {
     item_headers: Vec<ItemHeader>,
     nodes: NodeList,
-    secondary_items: BTreeSet<usize>
+    primary_items_count: usize
 }
 
 fn make_root_header(item_count: usize) -> ItemHeader {
@@ -285,7 +285,7 @@ fn get_item_instance_count(sets: &Vec<Vec<usize>>) -> usize {
 }
 
 impl DLXTable {
-    pub fn new(sets: Vec<Vec<usize>>, secondary_items: Vec<usize>) -> Self {
+    pub fn new(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Self {
         let item_count = get_item_count(&sets);
         let node_count = get_item_instance_count(&sets) + 1 + item_count;
 
@@ -298,7 +298,7 @@ impl DLXTable {
         DLXTable {
             item_headers,
             nodes: NodeList(nodes),
-            secondary_items: BTreeSet::from_iter(secondary_items)
+            primary_items_count
         }
     }
 
@@ -379,7 +379,7 @@ impl DLXTable {
         let mut i = root.next;
         while i != 0 {
             if let Some(item_header) = self.item_headers.get(i) {
-                if !self.secondary_items.contains(i-1) {
+                if i > self.primary_items_count {
                     items.push(i-1);
                     i = item_header.next;
                 }
@@ -556,7 +556,7 @@ mod tests {
                         below: 4
                     })
                 ]),
-                secondary_items: BTreeSet::new()
+                primary_items_count: 0
             }
         }
 
@@ -599,29 +599,29 @@ mod tests {
 
         #[test]
         fn empty() {
-            let table = DLXTable::new(Vec::new(), Vec::new());
+            let table = DLXTable::new(Vec::new(), 0);
             let expected = DLXTable {
                 item_headers: make_item_headers(0),
                 nodes: NodeList(Vec::new()),
-                secondary_items: BTreeSet::new()
+                primary_items_count: 0
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn empty_set() {
-            let table = DLXTable::new(vec![Vec::new()], vec![new]);
+            let table = DLXTable::new(vec![Vec::new()], 0);
             let expected = DLXTable {
                 item_headers: make_item_headers(0),
                 nodes: NodeList(Vec::new()),
-                secondary_items: BTreeSet::new()
+                primary_items_count: 0
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn one_element() {
-            let table = DLXTable::new(vec![vec![0]], Vec::new());
+            let table = DLXTable::new(vec![vec![0]], 0);
             let expected = DLXTable {
                 item_headers: make_item_headers(1),
                 nodes: NodeList(vec![
@@ -639,14 +639,14 @@ mod tests {
                         above: 0,
                         below: 0
                     })]),
-                secondary_items: BTreeSet::new()
+                primary_items_count: 0
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn multiple_elements() {
-            let table = DLXTable::new(vec![vec![0,1,2,3]], Vec::new());
+            let table = DLXTable::new(vec![vec![0,1,2,3]], 0);
             let expected = DLXTable {
                 item_headers: make_item_headers(4),
                 nodes: NodeList(vec![
@@ -695,14 +695,14 @@ mod tests {
                         below: 3
                     })
                 ]),
-                secondary_items: BTreeSet::new()
+                primary_items_count: 0
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn disjoint_test() {
-            let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]], Vec::new());
+            let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]], 0);
             let expected = DLXTable {
                 item_headers: make_item_headers(5),
                 nodes: NodeList(vec![
@@ -765,14 +765,14 @@ mod tests {
                         below: 4
                     })
                 ]),
-                secondary_items: BTreeSet::new()
+                primary_items_count: 0
             };
             assert_equal(table, expected);
         }
 
         #[test]
         fn overlapping_sets() {
-            let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]], Vec::new());
+            let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]], 0);
             let expected = make_testing_table();
             assert_equal(table, expected);
         }

@@ -106,7 +106,7 @@ fn try_next_level(table: &mut DLXTable, stack: &mut Vec<Cell<CoverNode>>, node: 
 }
 
 pub fn dlx_run(sets: Vec<Vec<usize>>) -> Vec<Vec<Vec<usize>>> {
-    let mut table = DLXTable::new(sets, Vec::new());
+    let mut table = DLXTable::new(sets, 0);
     let mut covers = Vec::new();
     let item_opt = least_instances_item(&table);
     if item_opt.is_none() {
@@ -151,8 +151,9 @@ pub struct DLXIter {
 
 pub fn dlx_iter<T>(sets: &Vec<Vec<T>>) -> DLXIter
     where T: Eq + Hash + Copy {
-    let index_sets = make_index_sets(sets, &get_unique_items(sets));
-    let mut table = DLXTable::new(index_sets);
+    let unique_items = get_unique_items(sets);
+    let index_sets = make_index_sets(sets, &unique_items);
+    let mut table = DLXTable::new(index_sets, unique_items.len());
     let mut stack = Vec::new();
     if let Some(item) = least_instances_item(&table) {
         table.cover(item);
