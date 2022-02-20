@@ -229,7 +229,8 @@ fn append_headers(nodes: &mut Vec<Node>, item_count: usize) {
 
 fn append_sets(nodes: &mut Vec<Node>, sets: &Vec<Vec<usize>>) {
     let mut prev_spacer = usize::MAX;
-    let nonempty_sets_iter = sets.iter().filter(|set| set.len() > 0);
+    let nonempty_sets_iter =
+        sets.iter().filter(|set| set.len() > 0);
     for set in nonempty_sets_iter {
         let start = nodes.len();
         add_set(nodes, prev_spacer, start, &set);
@@ -325,15 +326,21 @@ impl DLXTable {
     fn hide(&mut self, index: usize) {
         let mut i = index+1;
         while i != index {
-            if let Some(ItemNode(item)) = self.nodes.get(i) {
-                self.nodes.get_mut(item.above).unwrap().set_below(item.below);
-                self.nodes.get_mut(item.below).unwrap().set_above(item.above);
-                let header = self.nodes.get_header_mut(item.header).unwrap();
-                header.length -= 1;
-                i += 1;
-            }
-            else if let Some(SpacerNode(spacer)) = self.nodes.get(i) {
-                i = spacer.prev;
+            match self.nodes.get(i) {
+                Some(ItemNode(item)) => {
+                    self.nodes.get_mut(item.above).unwrap().set_below(item.below);
+                    self.nodes.get_mut(item.below).unwrap().set_above(item.above);
+                    let header = self.nodes.get_header_mut(item.header).unwrap();
+                    header.length -= 1;
+                    i += 1;
+                }
+                Some(SpacerNode(spacer)) => {
+                    i = spacer.prev;
+                }
+                _ => {
+                    // We get here because there is no spacer at the end
+                    break;
+                }
             }
         }
     }
@@ -360,15 +367,21 @@ impl DLXTable {
     fn unhide(&mut self, index: usize) {
         let mut i = index-1;
         while i != index {
-            if let Some(ItemNode(item)) = self.nodes.get(i) {
-                self.nodes.get_mut(item.above).unwrap().set_below(i);
-                self.nodes.get_mut(item.below).unwrap().set_above(i);
-                let header = self.nodes.get_header_mut(item.header).unwrap();
-                header.length += 1;
-                i -= 1;
-            }
-            else if let Some(SpacerNode(spacer)) = self.nodes.get(i) {
-                i = spacer.next;
+            match self.nodes.get(i) {
+                Some(ItemNode(item)) => {
+                    self.nodes.get_mut(item.above).unwrap().set_below(i);
+                    self.nodes.get_mut(item.below).unwrap().set_above(i);
+                    let header = self.nodes.get_header_mut(item.header).unwrap();
+                    header.length += 1;
+                    i -= 1;
+                }
+                Some(SpacerNode(spacer)) => {
+                    i = spacer.next;
+                }
+                _ => {
+                    // No spacer at the end
+                    break;
+                }
             }
         }
     }
@@ -379,9 +392,12 @@ impl DLXTable {
         let mut i = root.next;
         while i != 0 {
             if let Some(item_header) = self.item_headers.get(i) {
-                if i > self.primary_items_count {
+                if i <= self.primary_items_count {
                     items.push(i-1);
                     i = item_header.next;
+                }
+                else {
+                    break;
                 }
             }
             else {
@@ -404,22 +420,20 @@ impl DLXTable {
         node_indices
     }
 
+    pub fn get_item_value(&self, index: usize) -> Option<usize> {
+        self.nodes
+            .get_item(index)
+            .map(|item| self.item_headers.get(item.header+1))
+            .flatten()
+            .map(|item_header| item_header.value)
+    }
+
     pub fn get_set_items(&self, index: usize) -> Vec<usize> {
         let mut set_items = vec![index];
         let mut i = index+1;
-        while i != index {
-            match self.nodes.get(i) {
-                Some(ItemNode(_)) => {
-                    set_items.push(i);
-                    i += 1;
-                },
-                Some(SpacerNode(spacer)) => {
-                    i = spacer.prev;
-                },
-                _ => {
-                    return Vec::new();
-                }
-            };
+        while let Some(ItemNode(_)) = self.nodes.get(i) {
+            set_items.push(i);
+            i += 1;
         }
         set_items
     }
@@ -438,17 +452,21 @@ impl DLXTable {
         }
     }
 
-    pub fn cover_set(&mut self, item: usize) {
-        let set_items = self.get_set_items(item);
+    pub fn cover_set(&mut self, index: usize) {
+        let set_items = self.get_set_items(index);
         for set_item in set_items {
-            self.cover(set_item);
+            if index != set_item {
+                self.cover(self.get_item_value(set_item).unwrap());
+            }
         }
     }
 
-    pub fn uncover_set(&mut self, item: usize) {
-        let set_items = self.get_set_items(item);
-        for set_item in set_items {
-            self.uncover(set_item);
+    pub fn uncover_set(&mut self, index: usize) {
+        let set_items = self.get_set_items(index);
+        for set_item in set_items.iter().rev() {
+            if index != *set_item {
+                self.uncover(self.get_item_value(*set_item).unwrap());
+            }
         }
     }
 
@@ -785,17 +803,17 @@ mod tests {
 
         fn assert_covered_header(table: &DLXTable, index: usize) {
             let prev_index = if index >= 1 {
-                index-1
-            }
-            else {
-                table.item_headers.len()-1
-            };
+                    index-1
+                }
+                else {
+                    table.item_headers.len()-1
+                };
             let next_index = if index < table.item_headers.len()-1 {
-                index+1
-            }
-            else {
-                0
-            };
+                    index+1
+                }
+                else {
+                    0
+                };
             let prev_header = table.item_headers[prev_index];
             let header = table.item_headers[index];
             let next_header = table.item_headers[next_index];

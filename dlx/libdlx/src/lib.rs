@@ -6,4 +6,5 @@ mod dlx_table2;
 mod dlx2;
 mod dlx3;
 
-pub use dlx::{dlx,exact_cover};
+pub use dlx::{dlx};
+pub use dlx2::{dlx_run};

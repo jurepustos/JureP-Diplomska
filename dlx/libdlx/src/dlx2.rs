@@ -3,13 +3,24 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use crate::dlx_table2::DLXTable;
 
-fn make_index_sets<T>(sets: &Vec<Vec<T>>, items: &Vec<T>) -> Vec<Vec<usize>>
+fn make_index_sets<T>(sets: &Vec<Vec<T>>, primary_items: &Vec<T>, secondary_items: &Vec<T>) -> Vec<Vec<usize>>
     where T: Hash + Eq + Copy {
-    let item_map = items
+    let mut item_map = primary_items
         .iter()
         .enumerate()
         .map(|(i,item)| (*item,i))
         .collect::<HashMap<T,usize>>();
+
+    let secondaries = secondary_items
+        .iter()
+        .enumerate()
+        .map(|(i,item)| (*item,i))
+        .collect::<HashMap<T,usize>>();
+
+    let mut i = item_map.len();
+    for (item,_) in secondaries.into_iter() {
+        item_map.insert(item,i);
+    }
 
     sets.iter()
         .map(|set| set
@@ -29,35 +40,37 @@ fn get_unique_items<T>(sets: &Vec<Vec<T>>) -> Vec<T>
         .collect::<Vec<T>>()
 }
 
-fn get_item_set<T>(index_set: Vec<usize>, items: &Vec<T>) -> Vec<T>
+fn get_item_set<T>(index_set: Vec<usize>, primary_items: &Vec<T>, secondary_items: &Vec<T>) -> Vec<T>
     where T: Copy {
     index_set
         .into_iter()
-        .map(|i| items.get(i).cloned().into_iter())
+        .map(|i| primary_items.get(i)
+            .or(secondary_items.get(i)).cloned().into_iter())
         .flatten()
         .collect()
 }
 
-fn get_item_cover<T>(index_cover: Vec<Vec<usize>>, items: &Vec<T>) -> Vec<Vec<T>>
+fn get_item_cover<T>(index_cover: Vec<Vec<usize>>, primary_items: &Vec<T>,
+                     secondary_items: &Vec<T>) -> Vec<Vec<T>>
     where T: Copy {
     index_cover
         .into_iter()
-        .map(|set| get_item_set(set, items))
+        .map(|set| get_item_set(set, primary_items, secondary_items))
         .collect()
 }
 
-pub fn dlx<T>(sets: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
+pub fn dlx<T>(sets: &Vec<Vec<T>>, primary_items: &Vec<T>, secondary_items: &Vec<T>) -> Vec<Vec<Vec<T>>>
     where T: Hash + Eq + Copy {
-    let items = get_unique_items(sets);
-    let index_sets = make_index_sets(sets, &items);
-    let index_covers = dlx_run(index_sets);
+    let index_sets = make_index_sets(sets, primary_items, secondary_items);
+    let index_covers = dlx_run(index_sets, primary_items.len());
     index_covers
         .into_iter()
-        .map(|cover| get_item_cover(cover, &items))
+        .map(|cover|
+            get_item_cover(cover, primary_items, secondary_items))
         .collect()
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,Debug)]
 struct CoverNode {
     item: usize,
     instance: usize
@@ -66,9 +79,9 @@ struct CoverNode {
 fn least_instances_item(table: &DLXTable) -> Option<usize> {
     table.get_current_items()
         .into_iter()
-        .map(|item| table.get_instance_count(item))
-        .filter(|count| *count > 0)
-        .min()
+        .map(|item| (item, table.get_instance_count(item)))
+        .min_by(|(_,c1),(_,c2)| c1.cmp(c2))
+        .map(|(item, _)| item)
 }
 
 fn next_level_node(table: &DLXTable) -> Option<CoverNode> {
@@ -86,61 +99,72 @@ fn next_level_node(table: &DLXTable) -> Option<CoverNode> {
 fn extract_cover(table: &DLXTable, stack: &Vec<Cell<CoverNode>>) -> Vec<Vec<usize>> {
     let mut cover = Vec::new();
     for node_cell in stack {
-        cover.push(table.get_set_items(node_cell.get().instance));
+        let node = node_cell.get();
+        let set_items = table
+            .get_set_items(node.instance)
+            .into_iter()
+            .map(|item_index| table.get_item_value(item_index).unwrap())
+            .collect();
+        cover.push(set_items);
     }
 
     cover
 }
 
-fn try_next_level(table: &mut DLXTable, stack: &mut Vec<Cell<CoverNode>>, node: &mut CoverNode) {
-    // Cover new item
-    if let Some(next_node) = next_level_node(table) {
-        table.cover(next_node.item);
-        stack.push(Cell::new(next_node));
-    }
-    else {
-        // No items left to cover.
-        // We now uncover the last covered option.
-        table.uncover_set(node.instance);
-    }
+#[derive(PartialEq,Eq,Clone,Copy,Debug)]
+enum State {
+    Covering,
+    Backtracking
 }
 
-pub fn dlx_run(sets: Vec<Vec<usize>>) -> Vec<Vec<Vec<usize>>> {
-    let mut table = DLXTable::new(sets, 0);
+pub fn dlx_run(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Vec<Vec<Vec<usize>>> {
+    let mut table = DLXTable::new(sets, primary_items_count);
     let mut covers = Vec::new();
-    let item_opt = least_instances_item(&table);
-    if item_opt.is_none() {
-        return Vec::new();
-    }
-
     let mut stack = Vec::new();
-    let item = item_opt.unwrap();
-    table.cover(item);
-    if let Some(instance) = table.get_next_instance(item) {
-        stack.push(Cell::new(CoverNode {
-            item,
-            instance
-        }));
+    let mut state = State::Covering;
+    if let Some(node) = next_level_node(&table) {
+        stack.push(Cell::new(node));
+        table.cover(node.item);
+        table.cover_set(node.instance);
     }
     while let Some(node_cell) = stack.last() {
         let mut node = node_cell.get();
-        table.cover_set(node.instance);
-        // Select an option to cover
-        if let Some(next) = table.get_next_instance(node.instance) {
-            node.instance = next;
-            node_cell.replace(node);
-            try_next_level(&mut table, &mut stack, &mut node);
-        }
-        else {
-            // All options have been tried.
-            // Save current cover.
-            node_cell.replace(node);
-            covers.push(extract_cover(&table, &stack));
-            stack.pop();
-            // Go back one item.
-            table.uncover(node.item);
+        match state {
+            State::Covering => {
+                if let Some(next_node) = next_level_node(&table) {
+                    // Cover the next node
+                    stack.push(Cell::new(next_node));
+                    table.cover(next_node.item);
+                    table.cover_set(next_node.instance);
+                } else {
+                    // We reached the end, time to backtrack
+                    if let None = least_instances_item(&table) {
+                        // Save the solution
+                        let cover = extract_cover(&table, &stack);
+                        covers.push(cover);
+                    }
+                    state = State::Backtracking;
+                }
+            },
+            State::Backtracking => {
+                if let Some(next_instance) = table.get_next_instance(node.instance) {
+                    // Cover the next set
+                    table.uncover_set(node.instance);
+                    node.instance = next_instance;
+                    node_cell.replace(node);
+                    table.cover_set(node.instance);
+                    state = State::Covering;
+                }
+                else {
+                    // Uncover the last item
+                    stack.pop();
+                    table.uncover_set(node.instance);
+                    table.uncover(node.item);
+                }
+            }
         }
     }
+
     covers
 }
 
@@ -149,11 +173,10 @@ pub struct DLXIter {
     stack: Vec<Cell<CoverNode>>
 }
 
-pub fn dlx_iter<T>(sets: &Vec<Vec<T>>) -> DLXIter
+pub fn dlx_iter<T>(sets: &Vec<Vec<T>>, primary_items: &Vec<T>, secondary_items: &Vec<T>) -> DLXIter
     where T: Eq + Hash + Copy {
-    let unique_items = get_unique_items(sets);
-    let index_sets = make_index_sets(sets, &unique_items);
-    let mut table = DLXTable::new(index_sets, unique_items.len());
+    let index_sets = make_index_sets(sets, primary_items, secondary_items);
+    let mut table = DLXTable::new(index_sets, primary_items.len());
     let mut stack = Vec::new();
     if let Some(item) = least_instances_item(&table) {
         table.cover(item);
@@ -233,5 +256,72 @@ impl Iterator for DLXIter {
             }
         }
         None
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::dlx2::dlx_run;
+
+    #[test]
+    fn empty() {
+        let result = dlx_run(vec![], 0);
+        let expected: Vec<Vec<Vec<usize>>> = vec![];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn empty_set() {
+        let result = dlx_run(vec![vec![]], 0);
+        let expected: Vec<Vec<Vec<usize>>> = vec![];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn one_element() {
+        let result = dlx_run(vec![vec![0]], 1);
+        let expected = vec![vec![vec![0]]];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn one_set() {
+        let result = dlx_run(vec![vec![0,1,2]], 3);
+        let expected = vec![vec![vec![0,1,2]]];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn disjoint_sets() {
+        let result = dlx_run(vec![vec![0,1,2], vec![3,4,5]], 6);
+        let expected = vec![vec![vec![0,1,2], vec![3,4,5]]];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn overlapping_sets() {
+        let result =
+            dlx_run(vec![vec![0,1,2], vec![3,4,5], vec![3,4], vec![5]], 6);
+        let expected =
+            vec![vec![vec![0,1,2], vec![3,4,5]], vec![vec![0,1,2], vec![3,4], vec![5]]];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn no_solutions() {
+        let result = dlx_run(vec![vec![0,1,2], vec![3,4,5], vec![4,6]], 7);
+        let expected: Vec<Vec<Vec<usize>>> = vec![];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn secondary_items() {
+        let sets = vec![vec![0,1,2], vec![3,4,5], vec![3,6], vec![4,7]];
+        let result =
+            dlx_run(sets, 5);
+        let expected =
+            vec![vec![vec![0,1,2], vec![3,4,5]], vec![vec![0,1,2], vec![3,6], vec![4,7]]];
+        assert_eq!(expected, result);
     }
 }

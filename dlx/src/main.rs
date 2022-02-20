@@ -1,12 +1,9 @@
 mod sudoku;
 
 use libdlx::*;
-use sudoku::*;
 
 fn main() {
-    println!("Hello, world!");
-
-    let empty: Vec<Vec<usize>> = vec![];
-    let res = dlx(&empty);
+    let res = dlx_run(vec![vec![0,1,2], vec![3,4,5]], 6);
+    println!("{:?}", res);
 }
 
