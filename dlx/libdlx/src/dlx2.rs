@@ -239,49 +239,62 @@ impl BaseDLXIter {
         }
         cover
     }
+
+    fn cover_step(&mut self) -> Option<Vec<Vec<usize>>> {
+        println!("Covering: {:?}", self.stack);
+        let mut cover_opt = None;
+        if let Some(next_node) = self.next_level_node() {
+            // Cover the next node
+            self.stack.push(Cell::new(next_node));
+            self.table.cover(next_node.item);
+            self.table.cover_set(next_node.instance);
+        } else {
+            // We reached the end, time to backtrack
+            if let None = self.least_instances_item() {
+                // Save the solution
+                cover_opt = Some(self.extract_cover());
+            }
+            self.state = State::Backtracking;
+        }
+        cover_opt
+    }
+
+    fn backtrack(&mut self) {
+        println!("Backtracking: {:?}", self.stack);
+        if let Some(node_cell) = self.stack.last() {
+            let mut node = node_cell.get();
+            if let Some(next_instance) = self.table.get_next_instance(node.instance) {
+                // Cover the next set
+                self.table.uncover_set(node.instance);
+                node.instance = next_instance;
+                node_cell.replace(node);
+                self.table.cover_set(node.instance);
+                self.state = State::Covering;
+            } else {
+                // Uncover the last item
+                self.stack.pop();
+                self.table.uncover_set(node.instance);
+                self.table.uncover(node.item);
+            }
+        }
+    }
 }
 
 impl Iterator for BaseDLXIter {
     type Item = Vec<Vec<usize>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(node_cell) = self.stack.last() {
-            let mut node = node_cell.get();
+        while !self.stack.is_empty() {
             match self.state {
                 State::Covering => {
-                    if let Some(next_node) = self.next_level_node() {
-                        // Cover the next node
-                        self.stack.push(Cell::new(next_node));
-                        self.table.cover(next_node.item);
-                        self.table.cover_set(next_node.instance);
-                    } else {
-                        let mut cover_opt = None;
-                        // We reached the end, time to backtrack
-                        if let None = self.least_instances_item() {
-                            // Save the solution
-                            cover_opt = Some(self.extract_cover());
-                        }
-                        self.state = State::Backtracking;
-                        if let Some(cover) = cover_opt {
-                            return Some(cover)
-                        }
+                    let solution_opt = self.cover_step();
+                    if let Some(cover) = solution_opt {
+                        println!("Solution: {:?}", cover);
+                        return Some(cover)
                     }
                 },
                 State::Backtracking => {
-                    if let Some(next_instance) = self.table.get_next_instance(node.instance) {
-                        // Cover the next set
-                        self.table.uncover_set(node.instance);
-                        node.instance = next_instance;
-                        node_cell.replace(node);
-                        self.table.cover_set(node.instance);
-                        self.state = State::Covering;
-                    }
-                    else {
-                        // Uncover the last item
-                        self.stack.pop();
-                        self.table.uncover_set(node.instance);
-                        self.table.uncover(node.item);
-                    }
+                    self.backtrack();
                 }
             }
         }
@@ -356,6 +369,20 @@ mod tests {
             dlx_run(sets, 5);
         let expected =
             vec![vec![vec![0,1,2], vec![3,4,5]], vec![vec![0,1,2], vec![3,6], vec![4,7]]];
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn bigger_example() {
+        let sets = vec![
+            vec![2,4,5], vec![0,3,6], vec![1,2,5],
+            vec![0,3], vec![1,6], vec![3,4,6]
+        ];
+        let result = dlx_run(sets, 7);
+        let expected = vec![
+            vec![vec![0,3], vec![1,6], vec![2,3,5]],
+            vec![vec![0,3], vec![2,4,5], vec![1,6]]
+        ];
         assert_eq!(expected, result);
     }
 }
