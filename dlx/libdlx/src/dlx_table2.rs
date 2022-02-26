@@ -431,15 +431,25 @@ impl DLXTable {
     pub fn get_set_items(&self, index: usize) -> Vec<usize> {
         let mut set_items = vec![index];
         let mut i = index+1;
-        while let Some(ItemNode(_)) = self.nodes.get(i) {
-            set_items.push(i);
-            i += 1;
+        while i != index {
+            match self.nodes.get(i) {
+                Some(ItemNode(item)) => {
+                    set_items.push(i);
+                    i += 1;
+                },
+                Some(SpacerNode(spacer)) => {
+                    i = spacer.prev;
+                },
+                _ => {
+                    break;
+                }
+            }
         }
         set_items
     }
 
-    pub fn get_instance_count(&self, index: usize) -> usize {
-        match self.nodes.get(index) {
+    pub fn get_instance_count(&self, item: usize) -> usize {
+        match self.nodes.get(item) {
             Some(ItemNode(item)) =>
                 self.nodes
                     .get_header(item.header)

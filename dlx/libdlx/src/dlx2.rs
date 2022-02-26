@@ -200,7 +200,6 @@ impl BaseDLXIter {
         let mut this = BaseDLXIter { table, stack, state };
         if let Some(node) = this.next_level_node() {
             this.table.cover(node.item);
-            this.table.cover_set(node.instance);
             this.stack.push(Cell::new(node));
         }
         this
@@ -241,15 +240,18 @@ impl BaseDLXIter {
     }
 
     fn cover_step(&mut self) -> Option<Vec<Vec<usize>>> {
-        println!("Covering: {:?}", self.stack);
         let mut cover_opt = None;
+        if let Some(node_cell) = self.stack.last() {
+            let node = node_cell.get();
+            self.table.cover_set(node.instance);
+        }
         if let Some(next_node) = self.next_level_node() {
             // Cover the next node
             self.stack.push(Cell::new(next_node));
             self.table.cover(next_node.item);
-            self.table.cover_set(next_node.instance);
         } else {
             // We reached the end, time to backtrack
+            // Return the solution if the entire table is covered
             if let None = self.least_instances_item() {
                 // Save the solution
                 cover_opt = Some(self.extract_cover());
@@ -260,7 +262,6 @@ impl BaseDLXIter {
     }
 
     fn backtrack(&mut self) {
-        println!("Backtracking: {:?}", self.stack);
         if let Some(node_cell) = self.stack.last() {
             let mut node = node_cell.get();
             if let Some(next_instance) = self.table.get_next_instance(node.instance) {
@@ -268,7 +269,6 @@ impl BaseDLXIter {
                 self.table.uncover_set(node.instance);
                 node.instance = next_instance;
                 node_cell.replace(node);
-                self.table.cover_set(node.instance);
                 self.state = State::Covering;
             } else {
                 // Uncover the last item
@@ -289,7 +289,6 @@ impl Iterator for BaseDLXIter {
                 State::Covering => {
                     let solution_opt = self.cover_step();
                     if let Some(cover) = solution_opt {
-                        println!("Solution: {:?}", cover);
                         return Some(cover)
                     }
                 },
@@ -305,10 +304,23 @@ impl Iterator for BaseDLXIter {
 
 #[cfg(test)]
 mod tests {
-    use crate::dlx2::{BaseDLXIter};
+    use std::collections::{BTreeSet, HashSet};
+    use crate::dlx2::{BaseDLXIter, DLXIter};
 
     fn dlx_run(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Vec<Vec<Vec<usize>>> {
         BaseDLXIter::new(sets, primary_items_count).collect()
+    }
+
+    fn ordered(solution: Vec<Vec<Vec<usize>>>) -> Vec<HashSet<BTreeSet<usize>>> {
+        solution
+            .into_iter()
+            .map(|cover| cover
+                .into_iter()
+                .map(|set| set
+                    .into_iter()
+                    .collect::<BTreeSet<usize>>())
+                .collect::<HashSet<_>>())
+            .collect::<Vec<_>>()
     }
 
     #[test]
@@ -334,30 +346,36 @@ mod tests {
 
     #[test]
     fn one_set() {
-        let result = dlx_run(vec![vec![0,1,2]], 3);
-        let expected = vec![vec![vec![0,1,2]]];
+        let result =
+            ordered(dlx_run(vec![vec![0,1,2]], 3));
+        let expected = ordered(vec![vec![vec![0,1,2]]]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn disjoint_sets() {
-        let result = dlx_run(vec![vec![0,1,2], vec![3,4,5]], 6);
-        let expected = vec![vec![vec![0,1,2], vec![3,4,5]]];
+        let result =
+            ordered(dlx_run(vec![vec![0,1,2], vec![3,4,5]], 6));
+        let expected =
+            ordered(vec![vec![vec![0,1,2], vec![3,4,5]]]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn overlapping_sets() {
+        let sets = vec![vec![0,1,2], vec![3,4,5], vec![3,4], vec![5]];
         let result =
-            dlx_run(vec![vec![0,1,2], vec![3,4,5], vec![3,4], vec![5]], 6);
-        let expected =
-            vec![vec![vec![0,1,2], vec![3,4,5]], vec![vec![0,1,2], vec![3,4], vec![5]]];
+            ordered(dlx_run(sets, 6));
+        let expected = ordered(vec![
+            vec![vec![0,1,2], vec![3,4,5]],
+            vec![vec![0,1,2], vec![3,4], vec![5]]]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn no_solutions() {
-        let result = dlx_run(vec![vec![0,1,2], vec![3,4,5], vec![4,6]], 7);
+        let sets = vec![vec![0,1,2], vec![3,4,5], vec![4,6]];
+        let result = dlx_run(sets, 7);
         let expected: Vec<Vec<Vec<usize>>> = vec![];
         assert_eq!(expected, result);
     }
@@ -366,9 +384,10 @@ mod tests {
     fn secondary_items() {
         let sets = vec![vec![0,1,2], vec![3,4,5], vec![3,6], vec![4,7]];
         let result =
-            dlx_run(sets, 5);
-        let expected =
-            vec![vec![vec![0,1,2], vec![3,4,5]], vec![vec![0,1,2], vec![3,6], vec![4,7]]];
+            ordered(dlx_run(sets, 5));
+        let expected = ordered(vec![
+            vec![vec![0,1,2], vec![3,4,5]],
+            vec![vec![0,1,2], vec![3,6], vec![4,7]]]);
         assert_eq!(expected, result);
     }
 
@@ -378,11 +397,9 @@ mod tests {
             vec![2,4,5], vec![0,3,6], vec![1,2,5],
             vec![0,3], vec![1,6], vec![3,4,6]
         ];
-        let result = dlx_run(sets, 7);
-        let expected = vec![
-            vec![vec![0,3], vec![1,6], vec![2,3,5]],
-            vec![vec![0,3], vec![2,4,5], vec![1,6]]
-        ];
+        let result = ordered(dlx_run(sets, 7));
+        let expected = ordered(vec![
+            vec![vec![0,3], vec![1,6], vec![2,4,5]]]);
         assert_eq!(expected, result);
     }
 }
