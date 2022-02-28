@@ -305,7 +305,39 @@ impl Iterator for BaseDLXIter {
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeSet, HashSet};
+    use std::hash::Hash;
     use crate::dlx2::{BaseDLXIter, DLXIter};
+
+    fn vec_equality<T: Eq>(first: &Vec<T>, second: &Vec<T>) -> bool {
+        for elem in first {
+            if !second.contains(elem) {
+                return false
+            }
+        }
+        true
+    }
+
+    fn deep_vec_equality<T: Eq>(first: &Vec<Vec<T>>, second: &Vec<Vec<T>>) -> bool {
+        for vec1 in first {
+            let mut equality = false;
+            for vec2 in second {
+                if vec_equality(vec1, vec2) {
+                    equality = true;
+                    break;
+                }
+            }
+            if !equality {
+                return false
+            }
+        }
+        true
+    }
+
+    fn named_dlx_run<T>(sets: &Vec<Vec<T>>, primary_items: &Vec<T>,
+                        secondary_items: &Vec<T>) -> Vec<Vec<Vec<T>>>
+        where T: Eq + Hash + Copy {
+        DLXIter::new(sets, primary_items, secondary_items).collect()
+    }
 
     fn dlx_run(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Vec<Vec<Vec<usize>>> {
         BaseDLXIter::new(sets, primary_items_count).collect()
@@ -401,5 +433,21 @@ mod tests {
         let expected = ordered(vec![
             vec![vec![0,3], vec![1,6], vec![2,4,5]]]);
         assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn custom_names() {
+        let sets = vec![
+            vec!['c', 'e', 'f'], vec!['a', 'd', 'g'], vec!['b', 'c', 'f'],
+            vec!['a', 'd'], vec!['b', 'g'], vec!['d', 'e', 'g']
+        ];
+        let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+        let result =
+            named_dlx_run(&sets, &items, &vec![]);
+        let expected = vec![
+            vec![vec!['a', 'd'], vec!['b', 'g'], vec!['c', 'e', 'f']]
+        ];
+        assert_eq!(1, result.len());
+        assert!(deep_vec_equality(&expected[0], &result[0]));
     }
 }
