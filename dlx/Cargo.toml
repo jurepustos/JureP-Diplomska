@@ -10,3 +10,4 @@ authors = ["Jure Pustoslemšek <jp9483@student.uni-lj.si>"]
 
 [dependencies]
 libdlx = { path = "libdlx" }
+rand = "0.8.5"

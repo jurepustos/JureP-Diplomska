@@ -1,1168 +1,873 @@
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-struct Node {
+use std::collections::btree_set::BTreeSet;
+use std::collections::HashSet;
+use std::iter::FromIterator;
+use Node::HeaderNode;
+use Node::SpacerNode;
+use Node::ItemNode;
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+enum Node {
+    HeaderNode(Header),
+    SpacerNode(Spacer),
+    ItemNode(Item)
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+struct ItemHeader {
+    value: usize,
+    prev: usize,
+    next: usize
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+struct Header {
+    first: usize,
+    last: usize,
+    length: usize
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+struct Item {
     header: usize,
-    up: usize,
-    down: usize,
-    left: usize,
-    right: usize,
-    len: Option<usize>,
-    set: Option<usize>
+    above: usize,
+    below: usize
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+struct Spacer {
+    prev: usize,
+    next: usize
 }
 
 impl Node {
-    fn root() -> Self {
-        Node {
-            header: 0,
-            up: 0,
-            down: 0,
-            left: 0,
-            right: 0,
-            len: None,
-            set: None
+    fn get_header(&self) -> Option<&Header> {
+        match self {
+            HeaderNode(header) => Some(header),
+            _ => None
         }
     }
 
-    fn header(index: usize, length: usize) -> Self {
-        Node {
-            header: index,
-            up: index,
-            down: index,
-            left: index-1,
-            right: (index+1) % (length+1),
-            len: Some(0),
-            set: None
+    fn get_header_mut(&mut self) -> Option<&mut Header> {
+        match self {
+            HeaderNode(ref mut header) => Some(header),
+            _ => None
+        }
+    }
+
+    fn get_spacer(&self) -> Option<&Spacer> {
+        match self {
+            SpacerNode(spacer) => Some(spacer),
+            _ => None
+        }
+    }
+
+    fn get_spacer_mut(&mut self) -> Option<&mut Spacer> {
+        match self {
+            SpacerNode(ref mut spacer) => Some(spacer),
+            _ => None
+        }
+    }
+
+    fn get_item(&self) -> Option<&Item> {
+        match self {
+            ItemNode(item) => Some(item),
+            _ => None
+        }
+    }
+
+    fn get_item_mut(&mut self) -> Option<&mut Item> {
+        match self {
+            ItemNode(ref mut item) => Some(item),
+            _ => None
+        }
+    }
+
+    fn get_below(self) -> Option<usize> {
+        match self {
+            HeaderNode(header) => Some(header.first),
+            ItemNode(item) => Some(item.below),
+            SpacerNode(spacer) => Some(spacer.next),
+        }
+    }
+
+    fn get_above(self) -> Option<usize> {
+        match self {
+            HeaderNode(header) => Some(header.last),
+            ItemNode(item) => Some(item.above),
+            SpacerNode(spacer) => Some(spacer.prev),
+        }
+    }
+
+    fn set_above(&mut self, new_above: usize) {
+        match self {
+            ItemNode(item) => {
+                item.above = new_above;
+            },
+            HeaderNode(header) => {
+                header.last = new_above;
+            }
+            _ => {}
+        }
+    }
+
+    fn set_below(&mut self, new_below: usize) {
+        match self {
+            ItemNode(item) => {
+                item.below = new_below;
+            },
+            HeaderNode(header) => {
+                header.first = new_below;
+            }
+            _ => {}
         }
     }
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone,PartialEq,Eq,Debug)]
+struct NodeList(Vec<Node>);
+
+impl NodeList {
+    fn get(&self, index: usize) -> Option<Node> {
+        self.0.get(index).cloned()
+    }
+
+    fn get_mut(&mut self, index: usize) -> Option<&mut Node> {
+        self.0.get_mut(index)
+    }
+
+    fn get_header(&self, index: usize) -> Option<Header> {
+        match self.0.get(index) {
+            Some(HeaderNode(header)) => Some(*header),
+            _ => None
+        }
+    }
+
+    fn get_header_mut(&mut self, index: usize) -> Option<&mut Header> {
+        match self.0.get_mut(index) {
+            Some(HeaderNode(ref mut header)) => Some(header),
+            _ => None
+        }
+    }
+
+    fn get_spacer(&self, index: usize) -> Option<Spacer> {
+        match self.0.get(index) {
+            Some(SpacerNode(spacer)) => Some(*spacer),
+            _ => None
+        }
+    }
+
+    fn get_spacer_mut(&mut self, index: usize) -> Option<&mut Spacer> {
+        match self.0.get_mut(index) {
+            Some(SpacerNode(ref mut spacer)) => Some(spacer),
+            _ => None
+        }
+    }
+
+    fn get_item(&self, index: usize) -> Option<Item> {
+        match self.0.get(index) {
+            Some(ItemNode(item)) => Some(*item),
+            _ => None
+        }
+    }
+
+    fn get_item_mut(&mut self, index: usize) -> Option<&mut Item> {
+        match self.0.get_mut(index) {
+            Some(ItemNode(ref mut item)) => Some(item),
+            _ => None
+        }
+    }
+}
+
+
+#[derive(Clone,PartialEq,Eq,Debug)]
 pub struct DLXTable {
-    element_count: usize,
-    nodes: Vec<Node>,
-    set_heads: Vec<usize>
+    item_headers: Vec<ItemHeader>,
+    nodes: NodeList,
+    primary_items_count: usize
 }
 
+fn make_root_header(item_count: usize) -> ItemHeader {
+    if item_count > 0 {
+        ItemHeader {
+            value: usize::MAX,
+            prev: item_count,
+            next: 1
+        }
+    }
+    else {
+        ItemHeader {
+            value: usize::MAX,
+            prev: 0,
+            next: 0
+        }
+    }
+}
+
+fn make_item_headers(item_count: usize) -> Vec<ItemHeader> {
+    let mut item_headers = Vec::with_capacity(item_count+1);
+    item_headers.push(make_root_header(item_count));
+    for val in 0..item_count {
+        let node_index = val+1;
+        item_headers.push(ItemHeader {
+            value: val,
+            prev: node_index-1,
+            next: (node_index+1) % (item_count+1)
+        });
+    }
+    item_headers
+}
+
+fn append_headers(nodes: &mut Vec<Node>, item_count: usize) {
+    for node_index in 0..item_count {
+        nodes.push(HeaderNode(Header {
+            first: node_index,
+            last: node_index,
+            length: 0
+        }));
+    }
+}
+
+fn append_sets(nodes: &mut Vec<Node>, sets: &Vec<Vec<usize>>) {
+    let mut prev_spacer = usize::MAX;
+    let nonempty_sets_iter =
+        sets.iter().filter(|set| set.len() > 0);
+    for set in nonempty_sets_iter {
+        let start = nodes.len();
+        add_set(nodes, prev_spacer, start, &set);
+        prev_spacer = start+1;
+    }
+}
+
+fn add_set(nodes: &mut Vec<Node>, prev_spacer: usize, start_index: usize, set: &[usize]) {
+    nodes.push(SpacerNode(Spacer {
+        prev: prev_spacer,
+        next: start_index+set.len()
+    }));
+    for val in set {
+        add_item_node(nodes, nodes.len(), *val);
+    }
+}
+
+fn add_item_node(nodes: &mut Vec<Node>, current: usize, header_index: usize) {
+    if let Some(HeaderNode(ref mut header)) = nodes.get_mut(header_index) {
+        let above = header.last;
+        if header.first == header_index {
+            // No nodes for this item yet
+            header.first = current;
+        }
+        header.last = current;
+        header.length += 1;
+        if let Some(ItemNode(above_item)) = nodes.get_mut(above) {
+            above_item.below = current;
+        }
+
+        let item_node = ItemNode(Item {
+            header: header_index,
+            above,
+            below: header_index
+        });
+        nodes.push(item_node);
+    }
+}
+
+fn get_item_count(sets: &Vec<Vec<usize>>) -> usize {
+    sets.iter()
+        .flatten()
+        .max()
+        .map(|i| i+1)
+        .unwrap_or(0)
+}
+
+fn get_item_instance_count(sets: &Vec<Vec<usize>>) -> usize {
+    sets.iter()
+        .flatten()
+        .map(|_| 1)
+        .sum::<usize>()
+}
 
 impl DLXTable {
-    // Construct an empty table
-    pub fn new() -> Self {
-        DLXTable { 
-            element_count: 0, 
-            nodes: vec![Node::root()],
-            set_heads: Vec::new()
+    pub fn new(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Self {
+        let item_count = get_item_count(&sets);
+        let node_count = get_item_instance_count(&sets) + 1 + item_count;
+
+        let item_headers = make_item_headers(item_count);
+
+        let mut nodes = Vec::with_capacity(node_count);
+        append_headers(&mut nodes, item_count);
+        append_sets(&mut nodes, &sets);
+
+        DLXTable {
+            item_headers,
+            nodes: NodeList(nodes),
+            primary_items_count
         }
     }
 
-    // Construct a table with the given reserved space for nodes
-    fn with_capacity(elements: usize, sets_count: usize) -> Self {
-        let mut nodes = Vec::with_capacity(elements+sets_count+1); 
-        nodes.push(Node::root());
-        
-        DLXTable { 
-            element_count: elements,
-            nodes,
-            set_heads: Vec::new()
+    pub fn cover(&mut self, val: usize) {
+        if let Some(header) = self.nodes.get_header(val) {
+            let mut i = header.first;
+            while let Some(item) = self.nodes.get_item(i) {
+                self.hide(i);
+                i = item.below
+            }
+
+            let item_header = self.item_headers.get(val+1).cloned().unwrap();
+            let prev = item_header.prev;
+            let next = item_header.next;
+
+            let mut prev_header = self.item_headers.get_mut(prev).unwrap();
+            prev_header.next = next;
+
+            let mut next_header = self.item_headers.get_mut(next).unwrap();
+            next_header.prev = prev;
         }
     }
 
-    // Construct a table from the the given sets 
-    pub fn from(sets: &Vec<Vec<usize>>) -> Self {
-        let elements = element_count(&sets);
-        let mut table = Self::with_capacity(elements, sets.len());
-        table.create_headers();
-        for set in sets {
-            table.add_set(&set);
-        }
-
-        table
-    }
-
-    // Gets the header node for the given element 
-    fn get_header(&self, element: usize) -> Option<&Node> {
-        if element < self.element_count {
-            self.nodes.get(element+1)
-        }
-        else {
-            None
-        }
-    }
-
-    // Gets the mutable reference to the header node of an element
-    fn get_header_mut(&mut self, element: usize) -> Option<&mut Node> {
-        if element < self.element_count {
-            self.nodes.get_mut(element+1)
-        }
-        else {
-            None
-        }
-    }
-
-    // Gets the element that the node represents in a set 
-    fn get_element(&self, node: &Node) -> usize {
-        node.header - 1
-    }
-
-    // Gives all visible elements in the table
-    pub fn elements(&self) -> Vec<usize> {
-        let mut indices = Vec::new();
-        let root = self.nodes[0];
-        let mut node = &self.nodes[root.right];
-        while node.right != root.right {
-            let elem = self.get_element(node);
-            indices.push(elem);
-
-            let index = node.right;
-            node = &self.nodes[index];
-        }
-
-        indices
-    }
-
-    // Gets indices of all visible sets that contain the given element
-    pub fn element_sets(&self, element: usize) -> Vec<usize> {
-        let mut indices = Vec::new();
-        if let Some(header) = self.get_header(element) {
-            let mut node = header;
-            while node.down != header.header {
-                node = &self.nodes[node.down];
-                if let Some(set_index) = node.set {
-                    indices.push(set_index);
+    fn hide(&mut self, index: usize) {
+        let mut i = index+1;
+        while i != index {
+            match self.nodes.get(i) {
+                Some(ItemNode(item)) => {
+                    self.nodes.get_mut(item.above).unwrap().set_below(item.below);
+                    self.nodes.get_mut(item.below).unwrap().set_above(item.above);
+                    let header = self.nodes.get_header_mut(item.header).unwrap();
+                    header.length -= 1;
+                    i += 1;
+                }
+                Some(SpacerNode(spacer)) => {
+                    i = spacer.prev;
+                }
+                _ => {
+                    // We get here because there is no spacer at the end
+                    break;
                 }
             }
         }
-        
-        indices.sort();
-        indices
     }
 
-    // Returns true if the table contains any visible sets with no elements
-    pub fn has_empty_sets(&self) -> bool {
-        let elements = self.elements();
-        if elements.is_empty() {
-            false
-        }
-        else {
-            elements.into_iter()
-                .any(|elem| self.get_header(elem).unwrap().len == Some(0))
-        }
-    }
-    
-    // Creates headers for all elements
-    fn create_headers(&mut self) {
-        let length = self.element_count;
-        for i in 0..length {
-            self.nodes.push(Node::header(i+1, length));
-        }
+    pub fn uncover(&mut self, val: usize) {
+        if let Some(item_header) = self.item_headers.get(val+1).cloned() {
+            let prev = item_header.prev;
+            let prev_header = self.item_headers.get_mut(prev).unwrap();
+            prev_header.next = val+1;
 
-        let mut root = &mut self.nodes[0];
-        root.left = length;
-        if length > 0 {
-            root.right = 1;
-        }
-    }
+            let next = item_header.next;
+            let next_header = self.item_headers.get_mut(next).unwrap();
+            next_header.prev = val+1;
 
-    // Adds a set to the table
-    fn add_set(&mut self, set: &[usize]) {
-        if !set.is_empty() {
-            self.set_heads.push(self.nodes.len());
-            let set_index = self.set_heads.len() - 1;
-
-            let offset = self.nodes.len();
-            let set_len = set.len();
-            for (current_index, &element) in set.iter().enumerate() {
-                self.insert_node(current_index, element, set_index, offset, set_len);
+            let header = self.nodes.get_header(val).unwrap();
+            let mut i = header.last;
+            while let Some(item) = self.nodes.get_item(i) {
+                self.unhide(i);
+                i = item.above;
             }
         }
     }
 
-    // Adds a node representing a given element in the given set to the table. 
-    // We also need the index of this element in the set (index),
-    // the number of elements already in the set (set_len)
-    // and the index of the first element of the set (offset),
-    // which will be this node's index if the set is currently empty
-    fn insert_node(&mut self, index: usize, element: usize, set_index: usize, offset: usize, set_len: usize) {
-        let mut header = self.get_header_mut(element).unwrap();
-        let header_index = header.header;
-        let up = header.up;
-        header.up = offset + index;
-        
-        let len = header.len.unwrap_or(0);
-        header.len = Some(len+1);
+    fn unhide(&mut self, index: usize) {
+        let mut i = index-1;
+        while i != index {
+            match self.nodes.get(i) {
+                Some(ItemNode(item)) => {
+                    self.nodes.get_mut(item.above).unwrap().set_below(i);
+                    self.nodes.get_mut(item.below).unwrap().set_above(i);
+                    let header = self.nodes.get_header_mut(item.header).unwrap();
+                    header.length += 1;
+                    i -= 1;
+                }
+                Some(SpacerNode(spacer)) => {
+                    i = spacer.next;
+                }
+                _ => {
+                    // No spacer at the end
+                    break;
+                }
+            }
+        }
+    }
 
-        let mut up_node = &mut self.nodes[up];
-        up_node.down = offset + index;
-
-        let prev = 
-            if index == 0 {
-                set_len-1
+    pub fn get_current_items(&self) -> Vec<usize> {
+        let mut items = Vec::new();
+        let root = self.item_headers.get(0).unwrap();
+        let mut i = root.next;
+        while i != 0 {
+            if let Some(item_header) = self.item_headers.get(i) {
+                if i <= self.primary_items_count {
+                    items.push(i-1);
+                    i = item_header.next;
+                }
+                else {
+                    break;
+                }
             }
             else {
-                index-1
-            };
-        let next = (index+1) % set_len;
-        let left = offset + prev;
-        let right = offset + next;
-        
-        let new_node = Node {
-            header: header_index,
-            up,
-            down: header_index,
-            left,
-            right,
-            len: None,
-            set: Some(set_index)
-        };
-
-        self.nodes.push(new_node);
-    }
-
-    // Covers the given element by hiding the element's header 
-    // and all rows that contain it
-    pub fn cover_element(&mut self, element: usize) {
-        if element < self.element_count {
-            self.hide_element(element);
-            for set_index in self.element_sets(element) {
-                self.hide_row(element, set_index);
+                return Vec::new();
             }
         }
+        items
     }
 
-    // Hides the given element in the set by rewiring its left and right nodes
-    fn hide_element(&mut self, element: usize) {
-        if let Some(header) = self.get_header(element) {
-            let left = header.left;
-            let right = header.right;
-
-            let mut left_node = &mut self.nodes[left];
-            left_node.right = right;
-
-            let mut right_node = &mut self.nodes[right];
-            right_node.left = left;
-        }
-    }
-
-    // Counts the number for sets that visibly contain the given element  
-    pub fn element_sets_count(&self, element: usize) -> usize {
-        match self.get_header(element) {
-            Some(header) => header.len.unwrap_or(0),
-            None => 0 
-        }
-    }
-
-    // Gets table indices of all visible nodes that represent the given element  
-    fn element_nodes(&self, element: usize) -> Vec<usize> {
-        let mut indices = Vec::new();
-        if element < self.element_count {
-            let header = self.get_header(element).unwrap();
-            let mut next_node = header;
-            while next_node.down != header.header {
-                indices.push(next_node.down);
-                let down = next_node.down;
-                next_node = &self.nodes[down];
+    pub fn get_item_instances(&self, index: usize) -> Vec<usize> {
+        let mut node_indices = Vec::new();
+        if let Some(item) = self.nodes.get_item(index) {
+            let header = self.nodes.get_header(item.header).unwrap();
+            let mut i = header.first;
+            while let Some(item) = self.nodes.get_item(i) {
+                node_indices.push(i);
+                i = item.below;
             }
         }
-
-        indices.sort();
-        indices
+        node_indices
     }
 
-    // Gets table indices of all visible nodes in the row representing the given set 
-    pub fn row_nodes(&self, set_index: usize) -> Vec<usize> {
-        let mut indices = vec![];
-        if let Some(&set_head) = self.set_heads.get(set_index) {
-            indices.push(set_head);
-            if let Some(start_node) = self.nodes.get(set_head) {
-                let mut next_node = start_node;
-                while next_node.right != set_head {
-                    let right = next_node.right;
-                    indices.push(right);
-                    next_node = &self.nodes[right];
+    pub fn get_item_value(&self, index: usize) -> Option<usize> {
+        self.nodes
+            .get_item(index)
+            .map(|item| self.item_headers.get(item.header+1))
+            .flatten()
+            .map(|item_header| item_header.value)
+    }
+
+    pub fn get_set_items(&self, index: usize) -> Vec<usize> {
+        let mut set_items = vec![index];
+        let mut i = index+1;
+        while i != index {
+            match self.nodes.get(i) {
+                Some(ItemNode(item)) => {
+                    set_items.push(i);
+                    i += 1;
+                },
+                Some(SpacerNode(spacer)) => {
+                    i = spacer.prev;
+                },
+                _ => {
+                    break;
                 }
             }
         }
-
-        indices.sort();
-        indices
+        set_items
     }
 
-    // Gets all visible elements in the given set
-    pub fn set_elements(&self, set_index: usize) -> Vec<usize> {
-        let mut elem_indices = Vec::new();
-        let row_nodes = self.row_nodes(set_index);
-        for node_index in row_nodes {
-            let node = &self.nodes[node_index];
-            let element = self.get_element(node);
-            elem_indices.push(element);
-        } 
-
-        elem_indices.sort();
-        elem_indices
+    pub fn get_instance_count(&self, item: usize) -> usize {
+        match self.nodes.get(item) {
+            Some(ItemNode(item)) =>
+                self.nodes
+                    .get_header(item.header)
+                    .map(|header| header.length)
+                    .unwrap_or(0),
+            Some(HeaderNode(header)) => {
+                header.length
+            },
+            _ => 0
+        }
     }
 
-    // Hides the row representing the given set by rewiring up and down nodes
-    // of all nodes in the row
-    fn hide_row(&mut self, element: usize, set_index: usize) {
-        for index in self.row_nodes(set_index) {
-            let node = &self.nodes[index];
-            if self.get_element(node) != element {
-                let up = node.up;
-                let down = node.down;   
-                let element = self.get_element(node);
-    
-                let mut up_node = &mut self.nodes[up];
-                up_node.down = down;
-    
-                let mut down_node = &mut self.nodes[down];
-                down_node.up = up;
-    
-                let mut header = self.get_header_mut(element).unwrap();
-                let len = header.len.unwrap_or(1);
-                header.len = Some(len-1);
+    pub fn cover_set(&mut self, index: usize) {
+        let set_items = self.get_set_items(index);
+        for set_item in set_items {
+            if index != set_item {
+                self.cover(self.get_item_value(set_item).unwrap());
             }
         }
     }
 
-    // Covers the row representing the given set 
-    // by covering all visible elements in the set
-    pub fn cover_set(&mut self, element: usize, set_index: usize) {
-        for index in self.row_nodes(set_index) {
-            let node = &self.nodes[index];
-            let node_element = self.get_element(node);
-            if node_element != element {
-                self.cover_element(node_element);
+    pub fn uncover_set(&mut self, index: usize) {
+        let set_items = self.get_set_items(index);
+        for set_item in set_items.iter().rev() {
+            if index != *set_item {
+                self.uncover(self.get_item_value(*set_item).unwrap());
             }
         }
     }
 
-    // Uncovers the given covered element by unhiding the element 
-    // and rows that contain it
-    pub fn uncover_element(&mut self, element: usize) {
-        if element < self.element_count {
-            self.unhide_element(element);
-            let elem_sets = self.element_sets(element);
-            for set_index in elem_sets {
-                self.unhide_row(element, set_index);
-            }
-        }
-    }
-
-    // Unhides the given hidden element (undoes the left-right rewire) 
-    fn unhide_element(&mut self, element: usize) {
-        if let Some(header) = &self.get_header(element) {
-            let left = header.left;
-            let right = header.right;
-            let header_index = header.header;
-
-            let mut left_header = &mut self.nodes[left];
-            left_header.right = header_index;
-
-            let mut right_header = &mut self.nodes[right];
-            right_header.left = header_index;
-        }
-    }
-
-    // Unhides the row representing the given set with respect to the given element
-    // (undoes the up-down rewire for all nodes in the row,
-    // except for the node that represents the given element)
-    fn unhide_row(&mut self, element: usize, set_index: usize) {
-        for index in self.row_nodes(set_index) {
-            let node = &self.nodes[index];
-            if self.get_element(node) != element {
-                let up = node.up;
-                let down = node.down;
-                let header = node.header;
-    
-                let mut up_node = &mut self.nodes[up];
-                up_node.down = index;
-    
-                let mut down_node = &mut self.nodes[down];
-                down_node.up = index;
-    
-                let mut header_node = &mut self.nodes[header];
-                let len = header_node.len.unwrap_or(0);
-                header_node.len = Some(len+1);
-            }
-        }
-    }
-
-    // Uncovers the row representing the given set with respect to the given element
-    // (undoes the cover of all nodes in the row, 
-    // except for the one representing the given element as it's already uncovered)
-    pub fn uncover_set(&mut self, element: usize, set_index: usize) {
-        for index in self.row_nodes(set_index).into_iter().rev() {
-            let node = &self.nodes[index];
-            if self.get_element(node) != element {
-                let node = &self.nodes[index];
-                let node_element = self.get_element(node);
-                self.uncover_element(node_element);
-            }
+    pub fn get_next_instance(&self, index: usize) -> Option<usize> {
+        match self.nodes.get(index) {
+            Some(HeaderNode(header)) =>
+                self.nodes.get_item(header.first).and(Some(header.first)),
+            Some(ItemNode(item)) =>
+                self.nodes.get_item(item.below).and(Some(item.below)),
+            _ => None
         }
     }
 }
 
-// Counts the number of elements in the given sets
-fn element_count(sets: &[Vec<usize>]) -> usize {
-    match max_element(sets) {
-        None => 0,
-        Some(max) => max+1
-    }
-}
-
-// Finds the biggest element in the given sets
-fn max_element(sets: &[Vec<usize>]) -> Option<usize> {
-    sets.into_iter()
-        .flat_map(|set|
-            set.into_iter())
-        .map(|&elem| elem)
-        .max()
-}
 
 // Tests
-
 mod tests {
     use super::*;
 
-    fn create_table() -> DLXTable {
-        let sets = vec![
-            vec![2, 4, 5],
-            vec![0, 3, 6],
-            vec![1, 2, 5],
-            vec![0, 3],
-            vec![1, 6],
-            vec![3, 4, 6]
-        ];
-
-        DLXTable::from(&sets)
-    }
+    // 0234 124 34
+    fn make_testing_table() -> DLXTable {
+            DLXTable {
+                item_headers: make_item_headers(5),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 6,
+                        last: 6,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 11,
+                        last: 11,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 7,
+                        last: 12,
+                        length: 2
+                    }),
+                    HeaderNode(Header {
+                        first: 8,
+                        last: 15,
+                        length: 2
+                    }),
+                    HeaderNode(Header {
+                        first: 9,
+                        last: 16,
+                        length: 3
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 9
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 2,
+                        below: 12
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 3,
+                        below: 15
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 4,
+                        below: 13
+                    }),
+                    SpacerNode(Spacer {
+                        prev: 6,
+                        next: 13
+                    }),
+                    ItemNode(Item {
+                        header: 1,
+                        above: 1,
+                        below: 1
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 7,
+                        below: 2
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 9,
+                        below: 16
+                    }),
+                    SpacerNode(Spacer {
+                        prev: 11,
+                        next: 16
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 8,
+                        below: 3
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 13,
+                        below: 4
+                    })
+                ]),
+                primary_items_count: 0
+            }
+        }
 
     #[cfg(test)]
-    mod creation {
+    mod creation_tests {
         use super::super::*;
+        use super::*;
+        use Node::SpacerNode;
+        use Node::HeaderNode;
+        use Node::ItemNode;
+
+        fn item_node_count(nodes: &[Node]) -> usize {
+            nodes.iter()
+                .filter(|node| node.get_item().is_some())
+                .map(|_| 1)
+                .sum()
+        }
+
+        fn spacer_count(nodes: &[Node]) -> usize {
+            nodes.iter()
+                .filter(|node| node.get_spacer().is_some())
+                .map(|_| 1)
+                .sum()
+        }
+
+        fn header_count(nodes: &[Node]) -> usize {
+            nodes.iter()
+                .filter(|node| node.get_header().is_some())
+                .map(|_| 1)
+                .sum()
+        }
+
+        fn assert_equal(table: DLXTable, expected: DLXTable) {
+            assert_eq!(table.item_headers.len(), expected.item_headers.len());
+            assert_eq!(header_count(&table.nodes.0), header_count(&expected.nodes.0));
+            assert_eq!(spacer_count(&table.nodes.0), spacer_count(&expected.nodes.0));
+            assert_eq!(item_node_count(&table.nodes.0), item_node_count(&expected.nodes.0));
+            assert_eq!(table, expected);
+        }
 
         #[test]
-        fn no_sets() {
-            let empty: Vec<Vec<usize>> = vec![];
-            let table = DLXTable::from(&empty);
-    
-            let expected = DLXTable::new();
-            assert_eq!(expected, table);
+        fn empty() {
+            let table = DLXTable::new(Vec::new(), 0);
+            let expected = DLXTable {
+                item_headers: make_item_headers(0),
+                nodes: NodeList(Vec::new()),
+                primary_items_count: 0
+            };
+            assert_equal(table, expected);
         }
-    
+
         #[test]
         fn empty_set() {
-            let empty: Vec<Vec<usize>> = vec![vec![]];
-            let table = DLXTable::from(&empty);
-    
-            let expected = DLXTable::new();
-            assert_eq!(expected, table);
-        }
-    
-        #[test]
-        fn one_element() {
-            let sets = vec![vec![0]];
-            let table = DLXTable::from(&sets);
-    
-            let root = Node {
-                header: 0,
-                up: 0,
-                down: 0,
-                left: 1,
-                right: 1,
-                len: None,
-                set: None
-            };
-            let header = Node {
-                header: 1,
-                up: 2,
-                down: 2,
-                left: 0,
-                right: 0,
-                len: Some(1),
-                set: None
-            };
-            let node = Node {
-                header: 1,
-                up: 1,
-                down: 1,
-                left: 2,
-                right: 2,
-                len: None,
-                set: Some(0)
-            };
+            let table = DLXTable::new(vec![Vec::new()], 0);
             let expected = DLXTable {
-                element_count: 1,
-                nodes: vec![root, header, node],
-                set_heads: vec![2]
+                item_headers: make_item_headers(0),
+                nodes: NodeList(Vec::new()),
+                primary_items_count: 0
             };
-    
-            assert_eq!(expected, table);
+            assert_equal(table, expected);
         }
-
-        #[test]
-        fn one_set() {
-            let sets = vec![vec![0,1,2,3]];
-            let table = DLXTable::from(&sets);
-
-            let root = Node {
-                header: 0,
-                up: 0,
-                down: 0,
-                left: 4,
-                right: 1,
-                len: None,
-                set: None
-            };
-            let headers = vec![
-                // 1
-                Node {
-                    header: 1,
-                    up: 5,
-                    down: 5,
-                    left: 0,
-                    right: 2,
-                    len: Some(1),
-                    set: None
-                },
-                // 2
-                Node {
-                    header: 2,
-                    up: 6,
-                    down: 6,
-                    left: 1,
-                    right: 3,
-                    len: Some(1),
-                    set: None
-                },
-                // 3
-                Node {
-                    header: 3,
-                    up: 7,
-                    down: 7,
-                    left: 2,
-                    right: 4,
-                    len: Some(1),
-                    set: None
-                },
-                // 4
-                Node {
-                    header: 4,
-                    up: 8,
-                    down: 8,
-                    left:3,
-                    right: 0,
-                    len: Some(1),
-                    set: None
-                }
-            ];
-            let element_nodes = vec![
-                // 5
-                Node {
-                    header: 1,
-                    up: 1,
-                    down: 1,
-                    left: 8,
-                    right: 6,
-                    len: None,
-                    set: Some(0)
-                },
-                // 6
-                Node {
-                    header: 2,
-                    up: 2,
-                    down: 2,
-                    left: 5,
-                    right: 7,
-                    len: None, 
-                    set: Some(0)
-                },
-                // 7
-                Node {
-                    header: 3,
-                    up: 3,
-                    down: 3,
-                    left: 6,
-                    right: 8,
-                    len: None,
-                    set: Some(0)
-                },
-                // 8
-                Node {
-                    header: 4,
-                    up: 4,
-                    down: 4,
-                    left: 7,
-                    right: 5,
-                    len: None,
-                    set: Some(0)
-                }
-            ];
-            let mut nodes = vec![root];
-            nodes.extend(headers);
-            nodes.extend(element_nodes);
-
-            let expected = DLXTable {
-                element_count: 4,
-                nodes,
-                set_heads: vec![5]
-            };
-            assert_eq!(expected, table);
-        }
-
-        #[test]
-        fn disjoint_sets() {
-            let sets = vec![
-                vec![0,2,4],
-                vec![1,3,5]
-            ];
-            let table = DLXTable::from(&sets);
-
-            let root = Node {
-                header: 0,
-                up: 0,
-                down: 0,
-                left: 6,
-                right: 1,
-                len: None,
-                set: None
-            };
-            let headers = vec![
-                // 1
-                Node {
-                    header: 1,
-                    up: 7,
-                    down: 7,
-                    left: 0,
-                    right: 2,
-                    len: Some(1),
-                    set: None
-                },
-                // 2
-                Node {
-                    header: 2,
-                    up: 10,
-                    down: 10,
-                    left: 1,
-                    right: 3,
-                    len: Some(1),
-                    set: None
-                },
-                // 3
-                Node {
-                    header: 3,
-                    up: 8,
-                    down: 8,
-                    left: 2,
-                    right: 4,
-                    len: Some(1),
-                    set: None
-                },
-                // 4
-                Node {
-                    header: 4,
-                    up: 11,
-                    down: 11,
-                    left:3,
-                    right: 5,
-                    len: Some(1),
-                    set: None
-                },
-                // 5
-                Node {
-                    header: 5,
-                    up: 9,
-                    down: 9,
-                    left: 4,
-                    right: 6,
-                    len: Some(1),
-                    set: None
-                },
-                // 6
-                Node {
-                    header: 6,
-                    up: 12,
-                    down: 12,
-                    left: 5,
-                    right: 0,
-                    len: Some(1),
-                    set: None
-                }
-            ];
-            let element_nodes = vec![
-                // 7    
-                Node {
-                    header: 1,
-                    up: 1,
-                    down: 1,
-                    left: 9,
-                    right: 8,
-                    len: None,
-                    set: Some(0)
-                },
-                // 8
-                Node {
-                    header: 3,
-                    up: 3,
-                    down: 3,
-                    left: 7,
-                    right: 9,
-                    len: None,
-                    set: Some(0)
-                },
-                // 9
-                Node {
-                    header: 5,
-                    up: 5,
-                    down: 5,
-                    left: 8,
-                    right: 7,
-                    len: None,
-                    set: Some(0)
-                },
-                // 10
-                Node {
-                    header: 2,
-                    up: 2,
-                    down: 2,
-                    left: 12,
-                    right: 11,
-                    len: None,
-                    set: Some(1)
-                },
-                // 11
-                Node {
-                    header: 4,
-                    up: 4,
-                    down: 4,
-                    left: 10,
-                    right: 12,
-                    len: None,
-                    set: Some(1)
-                },
-                // 12
-                Node {
-                    header: 6,
-                    up: 6,
-                    down: 6,
-                    left: 11,
-                    right: 10,
-                    len: None,
-                    set: Some(1)
-                }
-            ];
-            let mut nodes = vec![root];
-            nodes.extend(headers);
-            nodes.extend(element_nodes);
-
-            let expected = DLXTable {
-                element_count: 6,
-                nodes,
-                set_heads: vec![7,10]
-            };
-            assert_eq!(expected, table);
-        }
-
-        #[test]
-        fn multiple_solutions() {
-            let sets = vec![
-                vec![0,2,4],
-                vec![0,1,2],
-                vec![3,4]
-            ];
-            let table = DLXTable::from(&sets);
-
-            let root = Node {
-                header: 0,
-                up: 0,
-                down: 0,
-                left: 5,
-                right: 1,
-                len: None,
-                set: None
-            };
-            let headers = vec![
-                // 1
-                Node {
-                    header: 1,
-                    up: 9,
-                    down: 6, 
-                    left: 0,
-                    right: 2,
-                    len: Some(2),
-                    set: None
-                },
-                // 2
-                Node {
-                    header: 2,
-                    up: 10,
-                    down: 10,
-                    left: 1,
-                    right: 3,
-                    len: Some(1),
-                    set: None
-                },
-                // 3
-                Node {
-                    header: 3,
-                    up: 11,
-                    down: 7,
-                    left: 2,
-                    right: 4,
-                    len: Some(2),
-                    set: None
-                },
-                // 4
-                Node {
-                    header: 4,
-                    up: 12,
-                    down: 12,
-                    left: 3,
-                    right: 5,
-                    len: Some(1),
-                    set: None
-                },
-                // 5
-                Node {
-                    header: 5,
-                    up: 13,
-                    down: 8,
-                    left: 4,
-                    right: 0,
-                    len: Some(2),
-                    set: None
-                },
-            ];
-            let element_nodes = vec![
-                // 6
-                Node {
-                    header: 1,
-                    up: 1,
-                    down: 9,
-                    left: 8,
-                    right: 7,
-                    len: None,
-                    set: Some(0)
-                },
-                // 7
-                Node {
-                    header: 3,
-                    up: 3,
-                    down: 11,
-                    left: 6,
-                    right: 8,
-                    len: None,
-                    set: Some(0)
-                },
-                // 8
-                Node {
-                    header: 5,
-                    up: 5,
-                    down: 13,
-                    left: 7,
-                    right: 6,
-                    len: None,
-                    set: Some(0)
-                },
-                // 9
-                Node {
-                    header: 1,
-                    up: 6,
-                    down: 1,
-                    left: 11,
-                    right: 10,
-                    len: None,
-                    set: Some(1)
-                },
-                // 10
-                Node {
-                    header: 2,
-                    up: 2,
-                    down: 2,
-                    left: 9,
-                    right: 11,
-                    len: None,
-                    set: Some(1)
-                },
-                // 11
-                Node {
-                    header: 3,
-                    up: 7,
-                    down: 3,
-                    left: 10,
-                    right: 9,
-                    len: None,
-                    set: Some(1)
-                },
-                // 12
-                Node {
-                    header: 4,
-                    up: 4,
-                    down: 4,
-                    left: 13,
-                    right: 13,
-                    len: None,
-                    set: Some(2)
-                },
-                // 13
-                Node {
-                    header: 5,
-                    up: 8,
-                    down: 5,
-                    left: 12,
-                    right: 12,
-                    len: None,
-                    set: Some(2)
-                }
-            ];
-
-            let mut nodes = vec![root];
-            nodes.extend(headers);
-            nodes.extend(element_nodes);
-
-            let expected = DLXTable {
-                element_count: 5,
-                nodes,
-                set_heads: vec![6,9,12]
-            };
-            assert_eq!(expected, table);
-        }
-    }
-
-    #[cfg(test)]
-    mod element_sets {
-        use super::*;
 
         #[test]
         fn one_element() {
-            let sets = vec![vec![0]];
-            let table = DLXTable::from(&sets);
-
-            let element_sets = table.element_sets(0);
-            
-            let expected = vec![0];
-            assert_eq!(expected, element_sets); 
+            let table = DLXTable::new(vec![vec![0]], 0);
+            let expected = DLXTable {
+                item_headers: make_item_headers(1),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 2,
+                        last: 2,
+                        length: 1
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 2
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    })]),
+                primary_items_count: 0
+            };
+            assert_equal(table, expected);
         }
 
         #[test]
-        fn finds_all_containing_sets() {
-            let table = create_table();
-
-            let element_sets = table.element_sets(0);
-            let expected = vec![1,3];
-            assert_eq!(expected, element_sets);
-
-            let element_sets = table.element_sets(3);
-            let expected = vec![1,3,5];
-            assert_eq!(expected, element_sets);
-        }
-    }
-
-    #[cfg(test)]
-    mod row_nodes {
-        use super::*;
-
-        #[test]
-        fn one_element() {
-            let sets = vec![vec![0]];
-            let table = DLXTable::from(&sets);
-
-            assert_eq!(1, table.row_nodes(0).len());
-        }
-
-        #[test]
-        fn counts_all_elements() {
-            let table = create_table();
-
-            let first_row_nodes = table.row_nodes(0);
-            let second_row_nodes = table.row_nodes(1);
-            assert_eq!(3, first_row_nodes.len());
-            assert_eq!(3, second_row_nodes.len());
-        }
-
-        #[test]
-        fn finds_all_elements() {
-            let table = create_table();
-
-            let first_row_nodes = table.row_nodes(0);
-            let expected = vec![8,9,10];
-            assert_eq!(expected, first_row_nodes);
-            
-            let second_row_nodes = table.row_nodes(1);
-            let expected = vec![11,12,13];
-            assert_eq!(expected, second_row_nodes);
-        }
-    }
-
-    #[cfg(test)]
-    mod cover_element {
-        use super::*;
-
-        #[test]
-        fn header_unchanged() {
-            let mut table = create_table();
-            table.cover_element(0);
-
-            let header_node = table.nodes[1];
-            
-            assert_eq!(11, header_node.down);
-            assert_eq!(17, header_node.up);
-            assert_eq!(0, header_node.left);
-            assert_eq!(2, header_node.right);
+        fn multiple_elements() {
+            let table = DLXTable::new(vec![vec![0,1,2,3]], 0);
+            let expected = DLXTable {
+                item_headers: make_item_headers(4),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 5,
+                        last: 5,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 6,
+                        last: 6,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 7,
+                        last: 7,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 8,
+                        last: 8,
+                        length: 1
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 8
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    }),
+                    ItemNode(Item {
+                        header: 1,
+                        above: 1,
+                        below: 1
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 2,
+                        below: 2
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 3,
+                        below: 3
+                    })
+                ]),
+                primary_items_count: 0
+            };
+            assert_equal(table, expected);
         }
 
         #[test]
-        fn header_horizontal_disconnected() {
-            let mut table = create_table();
-            table.cover_element(0);
-
-            let left_node = table.nodes[0];
-            let right_node = table.nodes[2];
-
-            assert_eq!(2, left_node.right);
-            assert_eq!(0, right_node.left);
+        fn disjoint_test() {
+            let table = DLXTable::new(vec![vec![0,1,2], vec![3,4]], 0);
+            let expected = DLXTable {
+                item_headers: make_item_headers(5),
+                nodes: NodeList(vec![
+                    HeaderNode(Header {
+                        first: 6,
+                        last: 6,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 7,
+                        last: 7,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 8,
+                        last: 8,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 10,
+                        last: 10,
+                        length: 1
+                    }),
+                    HeaderNode(Header {
+                        first: 11,
+                        last: 11,
+                        length: 1
+                    }),
+                    SpacerNode(Spacer {
+                        prev: usize::MAX,
+                        next: 8
+                    }),
+                    ItemNode(Item {
+                        header: 0,
+                        above: 0,
+                        below: 0
+                    }),
+                    ItemNode(Item {
+                        header: 1,
+                        above: 1,
+                        below: 1
+                    }),
+                    ItemNode(Item {
+                        header: 2,
+                        above: 2,
+                        below: 2
+                    }),
+                    SpacerNode(Spacer {
+                        prev: 6,
+                        next: 11
+                    }),
+                    ItemNode(Item {
+                        header: 3,
+                        above: 3,
+                        below: 3
+                    }),
+                    ItemNode(Item {
+                        header: 4,
+                        above: 4,
+                        below: 4
+                    })
+                ]),
+                primary_items_count: 0
+            };
+            assert_equal(table, expected);
         }
 
         #[test]
-        fn header_vertical_connected() {
-            let mut table = create_table();
-            table.cover_element(0);
-            
-            let down_node = table.nodes[11];
-            let up_node = table.nodes[17];
-
-            assert_eq!(1, down_node.up);
-            assert_eq!(1, up_node.down);
-        }
-
-        #[test]
-        fn element_nodes_unchanged() {
-            let mut table = create_table();
-            table.cover_element(0);
-            let element_nodes = table.element_nodes(0);
-
-            let expected = vec![11,17];
-            assert_eq!(expected, element_nodes);
-        }
-
-
-        #[test]
-        fn header_children_connected() {
-            let mut table = create_table();
-            table.cover_element(0);
-
-            let first_node = table.nodes[11];
-            let second_node = table.nodes[17];
-
-            assert_eq!(1, first_node.up);
-            assert_eq!(17, first_node.down);
-            assert_eq!(11, second_node.up);
-            assert_eq!(1, second_node.down);
-        }
-
-        #[test]
-        fn row_nodes_vertical_disconnected() {
-            let mut table = create_table();
-            table.cover_element(0);
-
-            let second_header = table.nodes[4];
-            assert_eq!(21, second_header.down);
-            assert_eq!(21, second_header.up);
-
-            let third_header = table.nodes[7];
-            assert_eq!(20, third_header.down);
-        }
-    }
-
-    #[cfg(test)]
-    mod uncover_element {
-        use super::*;
-
-        #[test]
-        fn recovers_original_state() {
-            let orig_table = create_table();
-            let mut table = create_table();
-            table.cover_element(0);
-            table.uncover_element(0);
-
-            assert_eq!(orig_table, table);
-        }
-
-        #[test]
-        fn header_reconnected() {
-            let mut table = create_table();
-            table.cover_element(0);
-            table.uncover_element(0);
-
-            let header_node = table.nodes[1];
-            assert_eq!(0, header_node.left);
-            assert_eq!(2, header_node.right);
-        }
-
-        #[test]
-        fn rows_reconnected() {
-            let mut table = create_table();
-
-            table.cover_element(0);
-            table.uncover_element(0);
-
-            let second_header = table.nodes[4];
-            assert_eq!(12, second_header.down);
-
-            let bottom_node = table.nodes[21];
-            assert_eq!(18, bottom_node.up);
-
-            let third_header = table.nodes[7];
-            assert_eq!(13, third_header.down);
+        fn overlapping_sets() {
+            let table = DLXTable::new(vec![vec![0,2,3,4], vec![1,2,4], vec![3,4]], 0);
+            let expected = make_testing_table();
+            assert_equal(table, expected);
         }
     }
 
     #[cfg(test)]
-    mod cover_set {
+    mod cover_tests {
         use super::*;
-        
-        #[test]
-        fn element_headers_unchanged() {
-            let mut table = create_table();
-            table.cover_set(0, 1);
+        use super::super::*;
 
-            let second_header = &table.nodes[4];
-            assert_eq!(3, second_header.left);
-            assert_eq!(5, second_header.right);
+        fn assert_covered_header(table: &DLXTable, index: usize) {
+            let prev_index = if index >= 1 {
+                    index-1
+                }
+                else {
+                    table.item_headers.len()-1
+                };
+            let next_index = if index < table.item_headers.len()-1 {
+                    index+1
+                }
+                else {
+                    0
+                };
+            let prev_header = table.item_headers[prev_index];
+            let header = table.item_headers[index];
+            let next_header = table.item_headers[next_index];
 
-            let third_header = &table.nodes[7];
-            assert_eq!(6, third_header.left);
-            assert_eq!(0, third_header.right);
+            assert_eq!(prev_header.next, next_index);
+            assert_eq!(next_header.prev, prev_index);
+            assert_eq!(header.prev, prev_index);
+            assert_eq!(header.next, next_index);
         }
 
         #[test]
-        fn element_headers_disconnected() {
-            let mut table = create_table();
-            table.cover_set(0, 1);
+        fn test_cover() {
+            // 0234 124 34
+            let mut table = make_testing_table();
+            table.cover(1);
 
-            let before_second_header = &table.nodes[4];
-            let after_second_header = &table.nodes[5];
+            assert_covered_header(&table, 2);
+            assert_eq!(table.nodes.get_header(2).unwrap().first, 7);
+            assert_eq!(table.nodes.get_header(2).unwrap().last, 7);
 
-            assert_eq!(5, before_second_header.right);
-            assert_eq!(3, after_second_header.left);
+            assert_eq!(table.nodes.get_header(4).unwrap().first, 9);
+            assert_eq!(table.nodes.get_header(4).unwrap().last, 16);
 
-            let before_third_header = &table.nodes[6];
-            let after_third_header = &table.nodes[0];
-            assert_eq!(0, before_third_header.right);
-            assert_eq!(6, after_third_header.left);
+            assert_eq!(table.nodes.get_item(7).unwrap().below, 2);
+            assert_eq!(table.nodes.get_item(7).unwrap().above, 2);
+
+            assert_eq!(table.nodes.get_item(9).unwrap().below, 16);
+            assert_eq!(table.nodes.get_item(9).unwrap().above, 4);
+
+            assert_eq!(table.nodes.get_item(12).unwrap().below, 2);
+            assert_eq!(table.nodes.get_item(12).unwrap().above, 7);
+
+            assert_eq!(table.nodes.get_item(13).unwrap().below, 16);
+            assert_eq!(table.nodes.get_item(13).unwrap().above, 9);
+
         }
-    }
 
-    #[cfg(test)]
-    mod uncover_set {
-        use super::*;
-        
         #[test]
-        fn recovers_original_state() {
-            let orig_table = create_table();
-            let mut table = create_table();
-            table.cover_set(0, 1);
-            table.uncover_set(0, 1);
-
-            assert_eq!(orig_table, table);
+        fn test_uncover() {
+            let original_table = make_testing_table();
+            let mut table = make_testing_table();
+            table.cover(1);
+            table.uncover(1);
+            assert_eq!(table, original_table);
         }
     }
 }
