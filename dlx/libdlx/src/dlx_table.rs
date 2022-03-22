@@ -1,15 +1,15 @@
 use std::collections::btree_set::BTreeSet;
 use std::collections::HashSet;
 use std::iter::FromIterator;
-use Node::HeaderNode;
-use Node::SpacerNode;
-use Node::ItemNode;
+use Node::Header;
+use Node::Spacer;
+use Node::OptionItem;
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
 enum Node {
-    HeaderNode(Header),
-    SpacerNode(Spacer),
-    ItemNode(Item)
+    Header(HeaderNode),
+    Spacer(SpacerNode),
+    OptionItem(OptionItemNode)
 }
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
@@ -20,90 +20,90 @@ struct ItemHeader {
 }
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
-struct Header {
+struct HeaderNode {
     first: usize,
     last: usize,
     length: usize
 }
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
-struct Item {
+struct OptionItemNode {
     header: usize,
     above: usize,
     below: usize
 }
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
-struct Spacer {
+struct SpacerNode {
     prev: usize,
     next: usize
 }
 
 impl Node {
-    fn get_header(&self) -> Option<&Header> {
+    fn get_header(&self) -> Option<&HeaderNode> {
         match self {
-            HeaderNode(header) => Some(header),
+            Header(header) => Some(header),
             _ => None
         }
     }
 
-    fn get_header_mut(&mut self) -> Option<&mut Header> {
+    fn get_header_mut(&mut self) -> Option<&mut HeaderNode> {
         match self {
-            HeaderNode(ref mut header) => Some(header),
+            Header(ref mut header) => Some(header),
             _ => None
         }
     }
 
-    fn get_spacer(&self) -> Option<&Spacer> {
+    fn get_spacer(&self) -> Option<&SpacerNode> {
         match self {
-            SpacerNode(spacer) => Some(spacer),
+            Spacer(spacer) => Some(spacer),
             _ => None
         }
     }
 
-    fn get_spacer_mut(&mut self) -> Option<&mut Spacer> {
+    fn get_spacer_mut(&mut self) -> Option<&mut SpacerNode> {
         match self {
-            SpacerNode(ref mut spacer) => Some(spacer),
+            Spacer(ref mut spacer) => Some(spacer),
             _ => None
         }
     }
 
-    fn get_item(&self) -> Option<&Item> {
+    fn get_option_node(&self) -> Option<&OptionItemNode> {
         match self {
-            ItemNode(item) => Some(item),
+            OptionItem(item) => Some(item),
             _ => None
         }
     }
 
-    fn get_item_mut(&mut self) -> Option<&mut Item> {
+    fn get_option_node_mut(&mut self) -> Option<&mut OptionItemNode> {
         match self {
-            ItemNode(ref mut item) => Some(item),
+            OptionItem(ref mut item) => Some(item),
             _ => None
         }
     }
 
     fn get_below(self) -> Option<usize> {
         match self {
-            HeaderNode(header) => Some(header.first),
-            ItemNode(item) => Some(item.below),
-            SpacerNode(spacer) => Some(spacer.next),
+            Header(header) => Some(header.first),
+            OptionItem(item) => Some(item.below),
+            Spacer(spacer) => Some(spacer.next),
         }
     }
 
     fn get_above(self) -> Option<usize> {
         match self {
-            HeaderNode(header) => Some(header.last),
-            ItemNode(item) => Some(item.above),
-            SpacerNode(spacer) => Some(spacer.prev),
+            Header(header) => Some(header.last),
+            OptionItem(item) => Some(item.above),
+            Spacer(spacer) => Some(spacer.prev),
         }
     }
 
     fn set_above(&mut self, new_above: usize) {
         match self {
-            ItemNode(item) => {
+            OptionItem(item) => {
                 item.above = new_above;
             },
-            HeaderNode(header) => {
+            Header(header) => {
                 header.last = new_above;
             }
             _ => {}
@@ -112,10 +112,10 @@ impl Node {
 
     fn set_below(&mut self, new_below: usize) {
         match self {
-            ItemNode(item) => {
+            OptionItem(item) => {
                 item.below = new_below;
             },
-            HeaderNode(header) => {
+            Header(header) => {
                 header.first = new_below;
             }
             _ => {}
@@ -135,44 +135,44 @@ impl NodeList {
         self.0.get_mut(index)
     }
 
-    fn get_header(&self, index: usize) -> Option<Header> {
+    fn get_header(&self, index: usize) -> Option<HeaderNode> {
         match self.0.get(index) {
-            Some(HeaderNode(header)) => Some(*header),
+            Some(Header(header)) => Some(*header),
             _ => None
         }
     }
 
-    fn get_header_mut(&mut self, index: usize) -> Option<&mut Header> {
+    fn get_header_mut(&mut self, index: usize) -> Option<&mut HeaderNode> {
         match self.0.get_mut(index) {
-            Some(HeaderNode(ref mut header)) => Some(header),
+            Some(Header(ref mut header)) => Some(header),
             _ => None
         }
     }
 
-    fn get_spacer(&self, index: usize) -> Option<Spacer> {
+    fn get_spacer(&self, index: usize) -> Option<SpacerNode> {
         match self.0.get(index) {
-            Some(SpacerNode(spacer)) => Some(*spacer),
+            Some(Spacer(spacer)) => Some(*spacer),
             _ => None
         }
     }
 
-    fn get_spacer_mut(&mut self, index: usize) -> Option<&mut Spacer> {
+    fn get_spacer_mut(&mut self, index: usize) -> Option<&mut SpacerNode> {
         match self.0.get_mut(index) {
-            Some(SpacerNode(ref mut spacer)) => Some(spacer),
+            Some(Spacer(ref mut spacer)) => Some(spacer),
             _ => None
         }
     }
 
-    fn get_item(&self, index: usize) -> Option<Item> {
+    fn get_item(&self, index: usize) -> Option<OptionItemNode> {
         match self.0.get(index) {
-            Some(ItemNode(item)) => Some(*item),
+            Some(OptionItem(item)) => Some(*item),
             _ => None
         }
     }
 
-    fn get_item_mut(&mut self, index: usize) -> Option<&mut Item> {
+    fn get_item_mut(&mut self, index: usize) -> Option<&mut OptionItemNode> {
         match self.0.get_mut(index) {
-            Some(ItemNode(ref mut item)) => Some(item),
+            Some(OptionItem(ref mut item)) => Some(item),
             _ => None
         }
     }
@@ -219,7 +219,7 @@ fn make_item_headers(item_count: usize) -> Vec<ItemHeader> {
 
 fn append_headers(nodes: &mut Vec<Node>, item_count: usize) {
     for node_index in 0..item_count {
-        nodes.push(HeaderNode(Header {
+        nodes.push(Header(HeaderNode {
             first: node_index,
             last: node_index,
             length: 0
@@ -233,13 +233,13 @@ fn append_sets(nodes: &mut Vec<Node>, sets: &Vec<Vec<usize>>) {
         sets.iter().filter(|set| set.len() > 0);
     for set in nonempty_sets_iter {
         let start = nodes.len();
-        add_set(nodes, prev_spacer, start, &set);
+        add_option(nodes, prev_spacer, start, &set);
         prev_spacer = start+1;
     }
 }
 
-fn add_set(nodes: &mut Vec<Node>, prev_spacer: usize, start_index: usize, set: &[usize]) {
-    nodes.push(SpacerNode(Spacer {
+fn add_option(nodes: &mut Vec<Node>, prev_spacer: usize, start_index: usize, set: &[usize]) {
+    nodes.push(Spacer(SpacerNode {
         prev: prev_spacer,
         next: start_index+set.len()
     }));
@@ -249,7 +249,7 @@ fn add_set(nodes: &mut Vec<Node>, prev_spacer: usize, start_index: usize, set: &
 }
 
 fn add_item_node(nodes: &mut Vec<Node>, current: usize, header_index: usize) {
-    if let Some(HeaderNode(ref mut header)) = nodes.get_mut(header_index) {
+    if let Some(Header(ref mut header)) = nodes.get_mut(header_index) {
         let above = header.last;
         if header.first == header_index {
             // No nodes for this item yet
@@ -257,11 +257,11 @@ fn add_item_node(nodes: &mut Vec<Node>, current: usize, header_index: usize) {
         }
         header.last = current;
         header.length += 1;
-        if let Some(ItemNode(above_item)) = nodes.get_mut(above) {
+        if let Some(OptionItem(above_item)) = nodes.get_mut(above) {
             above_item.below = current;
         }
 
-        let item_node = ItemNode(Item {
+        let item_node = OptionItem(OptionItemNode {
             header: header_index,
             above,
             below: header_index
@@ -327,14 +327,14 @@ impl DLXTable {
         let mut i = index+1;
         while i != index {
             match self.nodes.get(i) {
-                Some(ItemNode(item)) => {
+                Some(OptionItem(item)) => {
                     self.nodes.get_mut(item.above).unwrap().set_below(item.below);
                     self.nodes.get_mut(item.below).unwrap().set_above(item.above);
                     let header = self.nodes.get_header_mut(item.header).unwrap();
                     header.length -= 1;
                     i += 1;
                 }
-                Some(SpacerNode(spacer)) => {
+                Some(Spacer(spacer)) => {
                     i = spacer.prev;
                 }
                 _ => {
@@ -368,14 +368,14 @@ impl DLXTable {
         let mut i = index-1;
         while i != index {
             match self.nodes.get(i) {
-                Some(ItemNode(item)) => {
+                Some(OptionItem(item)) => {
                     self.nodes.get_mut(item.above).unwrap().set_below(i);
                     self.nodes.get_mut(item.below).unwrap().set_above(i);
                     let header = self.nodes.get_header_mut(item.header).unwrap();
                     header.length += 1;
                     i -= 1;
                 }
-                Some(SpacerNode(spacer)) => {
+                Some(Spacer(spacer)) => {
                     i = spacer.next;
                 }
                 _ => {
@@ -428,16 +428,16 @@ impl DLXTable {
             .map(|item_header| item_header.value)
     }
 
-    pub fn get_set_items(&self, index: usize) -> Vec<usize> {
+    pub fn get_option_items(&self, index: usize) -> Vec<usize> {
         let mut set_items = vec![index];
         let mut i = index+1;
         while i != index {
             match self.nodes.get(i) {
-                Some(ItemNode(item)) => {
+                Some(OptionItem(item)) => {
                     set_items.push(i);
                     i += 1;
                 },
-                Some(SpacerNode(spacer)) => {
+                Some(Spacer(spacer)) => {
                     i = spacer.prev;
                 },
                 _ => {
@@ -450,20 +450,20 @@ impl DLXTable {
 
     pub fn get_instance_count(&self, item: usize) -> usize {
         match self.nodes.get(item) {
-            Some(ItemNode(item)) =>
+            Some(OptionItem(item)) =>
                 self.nodes
                     .get_header(item.header)
                     .map(|header| header.length)
                     .unwrap_or(0),
-            Some(HeaderNode(header)) => {
+            Some(Header(header)) => {
                 header.length
             },
             _ => 0
         }
     }
 
-    pub fn cover_set(&mut self, index: usize) {
-        let set_items = self.get_set_items(index);
+    pub fn cover_option(&mut self, index: usize) {
+        let set_items = self.get_option_items(index);
         for set_item in set_items {
             if index != set_item {
                 self.cover(self.get_item_value(set_item).unwrap());
@@ -471,8 +471,8 @@ impl DLXTable {
         }
     }
 
-    pub fn uncover_set(&mut self, index: usize) {
-        let set_items = self.get_set_items(index);
+    pub fn uncover_option(&mut self, index: usize) {
+        let set_items = self.get_option_items(index);
         for set_item in set_items.iter().rev() {
             if index != *set_item {
                 self.uncover(self.get_item_value(*set_item).unwrap());
@@ -482,9 +482,9 @@ impl DLXTable {
 
     pub fn get_next_instance(&self, index: usize) -> Option<usize> {
         match self.nodes.get(index) {
-            Some(HeaderNode(header)) =>
+            Some(Header(header)) =>
                 self.nodes.get_item(header.first).and(Some(header.first)),
-            Some(ItemNode(item)) =>
+            Some(OptionItem(item)) =>
                 self.nodes.get_item(item.below).and(Some(item.below)),
             _ => None
         }
@@ -501,84 +501,84 @@ mod tests {
             DLXTable {
                 item_headers: make_item_headers(5),
                 nodes: NodeList(vec![
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 6,
                         last: 6,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 11,
                         last: 11,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 7,
                         last: 12,
                         length: 2
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 8,
                         last: 15,
                         length: 2
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 9,
                         last: 16,
                         length: 3
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: usize::MAX,
                         next: 9
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 0,
                         above: 0,
                         below: 0
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 2,
                         above: 2,
                         below: 12
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 3,
                         above: 3,
                         below: 15
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 4,
                         above: 4,
                         below: 13
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: 6,
                         next: 13
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 1,
                         above: 1,
                         below: 1
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 2,
                         above: 7,
                         below: 2
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 4,
                         above: 9,
                         below: 16
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: 11,
                         next: 16
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 3,
                         above: 8,
                         below: 3
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 4,
                         above: 13,
                         below: 4
@@ -592,13 +592,13 @@ mod tests {
     mod creation_tests {
         use super::super::*;
         use super::*;
-        use Node::SpacerNode;
-        use Node::HeaderNode;
-        use Node::ItemNode;
+        use Node::Spacer;
+        use Node::Header;
+        use Node::OptionItem;
 
         fn item_node_count(nodes: &[Node]) -> usize {
             nodes.iter()
-                .filter(|node| node.get_item().is_some())
+                .filter(|node| node.get_option_node().is_some())
                 .map(|_| 1)
                 .sum()
         }
@@ -653,16 +653,16 @@ mod tests {
             let expected = DLXTable {
                 item_headers: make_item_headers(1),
                 nodes: NodeList(vec![
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 2,
                         last: 2,
                         length: 1
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: usize::MAX,
                         next: 2
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 0,
                         above: 0,
                         below: 0
@@ -678,46 +678,46 @@ mod tests {
             let expected = DLXTable {
                 item_headers: make_item_headers(4),
                 nodes: NodeList(vec![
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 5,
                         last: 5,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 6,
                         last: 6,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 7,
                         last: 7,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 8,
                         last: 8,
                         length: 1
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: usize::MAX,
                         next: 8
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 0,
                         above: 0,
                         below: 0
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 1,
                         above: 1,
                         below: 1
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 2,
                         above: 2,
                         below: 2
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 3,
                         above: 3,
                         below: 3
@@ -734,60 +734,60 @@ mod tests {
             let expected = DLXTable {
                 item_headers: make_item_headers(5),
                 nodes: NodeList(vec![
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 6,
                         last: 6,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 7,
                         last: 7,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 8,
                         last: 8,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 10,
                         last: 10,
                         length: 1
                     }),
-                    HeaderNode(Header {
+                    Header(HeaderNode {
                         first: 11,
                         last: 11,
                         length: 1
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: usize::MAX,
                         next: 8
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 0,
                         above: 0,
                         below: 0
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 1,
                         above: 1,
                         below: 1
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 2,
                         above: 2,
                         below: 2
                     }),
-                    SpacerNode(Spacer {
+                    Spacer(SpacerNode {
                         prev: 6,
                         next: 11
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 3,
                         above: 3,
                         below: 3
                     }),
-                    ItemNode(Item {
+                    OptionItem(OptionItemNode {
                         header: 4,
                         above: 4,
                         below: 4

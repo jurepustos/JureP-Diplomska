@@ -85,7 +85,7 @@ fn extract_cover(table: &DLXTable, stack: &Vec<Cell<CoverNode>>) -> Vec<Vec<usiz
     for node_cell in stack {
         let node = node_cell.get();
         let set_items = table
-            .get_set_items(node.instance)
+            .get_option_items(node.instance)
             .into_iter()
             .map(|item_index| table.get_item_value(item_index).unwrap())
             .collect();
@@ -180,7 +180,7 @@ impl BaseDLXIter {
         for node_cell in &self.stack {
             let node = node_cell.get();
             let set_items = self.table
-                .get_set_items(node.instance)
+                .get_option_items(node.instance)
                 .into_iter()
                 .map(|item_index| self.table.get_item_value(item_index).unwrap())
                 .collect();
@@ -193,7 +193,7 @@ impl BaseDLXIter {
         let mut cover_opt = None;
         if let Some(node_cell) = self.stack.last() {
             let node = node_cell.get();
-            self.table.cover_set(node.instance);
+            self.table.cover_option(node.instance);
         }
         if let Some(next_node) = self.next_level_node() {
             // Cover the next node
@@ -216,14 +216,14 @@ impl BaseDLXIter {
             let mut node = node_cell.get();
             if let Some(next_instance) = self.table.get_next_instance(node.instance) {
                 // Cover the next set
-                self.table.uncover_set(node.instance);
+                self.table.uncover_option(node.instance);
                 node.instance = next_instance;
                 node_cell.replace(node);
                 self.state = State::Covering;
             } else {
                 // Uncover the last item
                 self.stack.pop();
-                self.table.uncover_set(node.instance);
+                self.table.uncover_option(node.instance);
                 self.table.uncover(node.item);
             }
         }
@@ -239,7 +239,6 @@ impl Iterator for BaseDLXIter {
                 State::Covering => {
                     let solution_opt = self.cover_step();
                     if let Some(cover) = solution_opt {
-                        println!("Solution {:?}", cover);
                         return Some(cover)
                     }
                 },

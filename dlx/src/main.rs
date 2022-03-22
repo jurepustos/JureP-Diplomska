@@ -1,3 +1,5 @@
+mod queens;
+mod bin_packing;
 mod sudoku;
 
 use rand::{Rng, thread_rng};
