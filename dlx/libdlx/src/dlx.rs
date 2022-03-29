@@ -48,8 +48,8 @@ fn get_item_cover<T>(index_cover: Vec<Vec<usize>>, primary_items: &Vec<T>,
         .collect()
 }
 
-pub fn dlx<'a, T>(sets: &'a Vec<Vec<T>>, primary_items: &'a Vec<T>,
-              secondary_items: &'a Vec<T>) -> DLXIter<'a, T>
+pub fn dlx<'a, T>(sets: Vec<Vec<T>>, primary_items: Vec<T>,
+              secondary_items: Vec<T>) -> DLXIter<T>
     where T: Hash + Eq + Copy {
     DLXIter::new(sets, primary_items, secondary_items)
 }
@@ -113,23 +113,23 @@ struct BaseDLXIter {
     state: State
 }
 
-pub struct DLXIter<'a, T> {
+pub struct DLXIter<T> {
     base: BaseDLXIter,
-    primary_items: &'a Vec<T>,
-    secondary_items: &'a Vec<T>
+    primary_items: Vec<T>,
+    secondary_items: Vec<T>
 }
 
-impl<'a, T> DLXIter<'a, T>
+impl<T> DLXIter<T>
     where T: Hash + Eq + Copy {
-    pub fn new(sets: &'a Vec<Vec<T>>, primary_items: &'a Vec<T>,
-               secondary_items: &'a Vec<T>) -> Self {
-        let index_sets = make_index_sets(sets, primary_items, secondary_items);
+    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>,
+               secondary_items: Vec<T>) -> Self {
+        let index_sets = make_index_sets(&sets, &primary_items, &secondary_items);
         let base = BaseDLXIter::new(index_sets, primary_items.len());
         DLXIter { base, primary_items, secondary_items }
     }
 }
 
-impl<'a, T> Iterator for DLXIter<'a, T>
+impl<T> Iterator for DLXIter<T>
     where T: Hash + Eq + Copy {
     type Item = Vec<Vec<T>>;
 
@@ -283,8 +283,8 @@ mod tests {
         true
     }
 
-    fn named_dlx_run<T>(sets: &Vec<Vec<T>>, primary_items: &Vec<T>,
-                        secondary_items: &Vec<T>) -> Vec<Vec<Vec<T>>>
+    fn named_dlx_run<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>,
+                        secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>>
         where T: Eq + Hash + Copy {
         DLXIter::new(sets, primary_items, secondary_items).collect()
     }
@@ -389,7 +389,7 @@ mod tests {
         ];
         let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
         let result =
-            named_dlx_run(&sets, &items, &vec![]);
+            named_dlx_run(sets, items, vec![]);
         let expected = vec![
             vec![vec!['a', 'd'], vec!['b', 'g'], vec!['c', 'e', 'f']]
         ];
