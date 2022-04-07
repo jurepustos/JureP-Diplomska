@@ -145,6 +145,7 @@ impl<T> Iterator for DLXIter<T>
 impl BaseDLXIter {
     pub fn new(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Self {
         let table = DLXTable::new(sets, primary_items_count);
+        println!("{:?}", table);
         let stack = Vec::new();
         let state = State::Covering;
         let mut this = BaseDLXIter { table, stack, state };
@@ -152,6 +153,7 @@ impl BaseDLXIter {
             this.table.cover(node.item);
             this.stack.push(Cell::new(node));
         }
+
         this
     }
 

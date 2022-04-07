@@ -2,7 +2,8 @@ pub use dlx::*;
 pub use dfs::*;
 
 mod dlx {
-    use libdlx::{dlx, DLXIter};
+    use libdlx::dlx2;
+use libdlx::{dlx, DLXIter};
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
     pub enum Position {
@@ -46,12 +47,44 @@ mod dlx {
         secondary_items
     }
 
-    pub fn n_queens_dlx(n: usize) -> DLXIter<Position> {
+    pub fn n_queens_dlx_iter(n: usize) -> DLXIter<Position> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
 
         dlx(problem_sets, primary_items, secondary_items)
+    }
+
+    pub fn dlx_to_solution(dlx_solution: &Vec<Vec<Position>>) -> Vec<(usize, usize)> {
+        let mut solution = Vec::new();
+        for option in dlx_solution {
+            let mut row = 0;
+            let mut column = 0;
+            for position in option {
+                if let Position::Row(i) = position {
+                    row = *i;
+                }
+                else if let Position::Column(j) = position {
+                    column = *j;
+                }
+            }
+            solution.push((row, column));
+        }
+
+        solution
+    }
+
+    pub fn n_queens_dlx(n : usize) -> Vec<Vec<(usize, usize)>> {
+        let mut solutions = Vec::new();
+        // let dlx_solutions = n_queens_dlx_iter(n).collect::<Vec<_>>();
+        let problem_sets = n_queens_problem(n);
+        let primary_items = make_primary_items(n);
+        let secondary_items = make_secondary_items(n);
+        let dlx_solutions = dlx2(problem_sets, primary_items, secondary_items);
+        for dlx_solution in dlx_solutions {
+            solutions.push(dlx_to_solution(&dlx_solution));
+        }
+        solutions
     }
 }
 
@@ -61,7 +94,7 @@ mod dfs {
             for j in 0..i {
                 let (rowa, cola) = queens[i];
                 let (rowb, colb) = queens[j];
-                if rowa == rowb || cola == colb || ((rowa - rowb) as isize).abs() == ((cola - colb) as isize).abs() {
+                if rowa == rowb || cola == colb || (rowa as isize - rowb as isize).abs() == (cola as isize - colb as isize).abs() {
                     return true
                 }
             }
@@ -69,24 +102,27 @@ mod dfs {
         false
     }
 
-    pub fn n_queens_dfs(n: usize) -> Vec<(usize, usize)> {
-        let mut queens = Vec::new();
-        let mut stack = vec![(0,0)];
-        while let Some((row, column)) = stack.pop() {
-            queens.push((row, column));
-            if !conflict(&queens) {
-                for col in 0..queens.len() {
-                    stack.push((row, col));
-                }
-            }
-            else {
-                queens.pop();
+    pub fn n_queens_dfs(n: usize) -> Vec<Vec<(usize, usize)>> {
+        let mut solutions = Vec::new();
+        let mut stack = vec![Vec::new()];
+        while let Some(solution) = stack.pop() {
+            if conflict(&solution) {
+                continue;
             }
 
-            if queens.len() == n {
-                break;
+            let row = solution.len();
+            if row == n {
+                solutions.push(solution);
+                continue;
+            }
+
+            for column in 0..n {
+                let queen = (row, column);
+                let mut queens = solution.clone();
+                queens.push(queen);
+                stack.push(queens);
             }
         }
-        queens
+        solutions
     }
 }

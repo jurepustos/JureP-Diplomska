@@ -1,26 +1,49 @@
 mod queens;
 mod bin_packing;
 mod sudoku;
+mod knapsack;
 
+use crate::queens::dlx_to_solution;
+use crate::queens::n_queens_dlx_iter;
+use crate::queens::n_queens_dlx;
+use crate::queens::n_queens_dfs;
 use rand::{Rng, thread_rng};
 use libdlx::*;
 
-fn main() {
-    for i in 0..10_usize.pow(5) {
-        let mut sets = Vec::with_capacity(20);
-        let mut rng = thread_rng();
-        let n: usize = rng.gen_range(5..10_usize.pow(3));
-        for _ in 0..20 {
-            let case = generate_exact_cover(&mut rng, n);
-            for set in case {
-                if !sets.contains(&set) {
-                    sets.push(set);
-                }
+fn print_solution(n: usize, solution: Vec<(usize, usize)>) {
+    let mut output = String::from("");
+    for row in 0..n {
+        for column in 0..n {
+            if solution.contains(&(row, column)) {
+                output.push('Q');
+            }
+            else {
+                output.push('.');
             }
         }
-        println!("Sets {:?}", sets);
-        let cover = dlx_run(sets, n);
-        println!("Covers {:?}", cover);
+        output.push('\n');
+    }
+    println!("{}", output);
+}
+
+fn main() {
+    // for n in 1..=10 {
+    //     // for solution in n_queens_dfs(n) {
+    //     //     print_solution(n, solution);
+    //     //     println!();    
+    //     // }
+    //     for solution in n_queens_dlx(n) {
+    //         print_solution(n, solution);
+    //         // println!("{:?}", dlx_solution);
+    //         println!();
+    //     }
+    // }
+    
+    let n = 13;
+    for solution in n_queens_dlx(n) {
+        print_solution(n, solution);
+        // println!("{:?}", dlx_solution);
+        println!();
     }
 }
 

@@ -1,6 +1,3 @@
-use std::collections::btree_set::BTreeSet;
-use std::collections::HashSet;
-use std::iter::FromIterator;
 use Node::Header;
 use Node::Spacer;
 use Node::OptionItem;
@@ -331,7 +328,9 @@ impl DLXTable {
                     self.nodes.get_mut(item.above).unwrap().set_below(item.below);
                     self.nodes.get_mut(item.below).unwrap().set_above(item.above);
                     let header = self.nodes.get_header_mut(item.header).unwrap();
-                    header.length -= 1;
+                    if i < self.primary_items_count {
+                        header.length -= 1;
+                    }
                     i += 1;
                 }
                 Some(Spacer(spacer)) => {
@@ -372,7 +371,9 @@ impl DLXTable {
                     self.nodes.get_mut(item.above).unwrap().set_below(i);
                     self.nodes.get_mut(item.below).unwrap().set_above(i);
                     let header = self.nodes.get_header_mut(item.header).unwrap();
-                    header.length += 1;
+                    if i < self.primary_items_count {
+                        header.length += 1;
+                    }
                     i -= 1;
                 }
                 Some(Spacer(spacer)) => {
@@ -394,11 +395,8 @@ impl DLXTable {
             if let Some(item_header) = self.item_headers.get(i) {
                 if i <= self.primary_items_count {
                     items.push(i-1);
-                    i = item_header.next;
                 }
-                else {
-                    break;
-                }
+                i = item_header.next;
             }
             else {
                 return Vec::new();
@@ -411,6 +409,13 @@ impl DLXTable {
         let mut node_indices = Vec::new();
         if let Some(item) = self.nodes.get_item(index) {
             let header = self.nodes.get_header(item.header).unwrap();
+            let mut i = header.first;
+            while let Some(item) = self.nodes.get_item(i) {
+                node_indices.push(i);
+                i = item.below;
+            }
+        }
+        else if let Some(header) = self.nodes.get_header(index) {
             let mut i = header.first;
             while let Some(item) = self.nodes.get_item(i) {
                 node_indices.push(i);
@@ -433,7 +438,7 @@ impl DLXTable {
         let mut i = index+1;
         while i != index {
             match self.nodes.get(i) {
-                Some(OptionItem(item)) => {
+                Some(OptionItem(_)) => {
                     set_items.push(i);
                     i += 1;
                 },
@@ -498,95 +503,95 @@ mod tests {
 
     // 0234 124 34
     fn make_testing_table() -> DLXTable {
-            DLXTable {
-                item_headers: make_item_headers(5),
-                nodes: NodeList(vec![
-                    Header(HeaderNode {
-                        first: 6,
-                        last: 6,
-                        length: 1
-                    }),
-                    Header(HeaderNode {
-                        first: 11,
-                        last: 11,
-                        length: 1
-                    }),
-                    Header(HeaderNode {
-                        first: 7,
-                        last: 12,
-                        length: 2
-                    }),
-                    Header(HeaderNode {
-                        first: 8,
-                        last: 15,
-                        length: 2
-                    }),
-                    Header(HeaderNode {
-                        first: 9,
-                        last: 16,
-                        length: 3
-                    }),
-                    Spacer(SpacerNode {
-                        prev: usize::MAX,
-                        next: 9
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 0,
-                        above: 0,
-                        below: 0
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 2,
-                        above: 2,
-                        below: 12
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 3,
-                        above: 3,
-                        below: 15
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 4,
-                        above: 4,
-                        below: 13
-                    }),
-                    Spacer(SpacerNode {
-                        prev: 6,
-                        next: 13
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 1,
-                        above: 1,
-                        below: 1
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 2,
-                        above: 7,
-                        below: 2
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 4,
-                        above: 9,
-                        below: 16
-                    }),
-                    Spacer(SpacerNode {
-                        prev: 11,
-                        next: 16
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 3,
-                        above: 8,
-                        below: 3
-                    }),
-                    OptionItem(OptionItemNode {
-                        header: 4,
-                        above: 13,
-                        below: 4
-                    })
-                ]),
-                primary_items_count: 0
-            }
+        DLXTable {
+            item_headers: make_item_headers(5),
+            nodes: NodeList(vec![
+                Header(HeaderNode {
+                    first: 6,
+                    last: 6,
+                    length: 1
+                }),
+                Header(HeaderNode {
+                    first: 11,
+                    last: 11,
+                    length: 1
+                }),
+                Header(HeaderNode {
+                    first: 7,
+                    last: 12,
+                    length: 2
+                }),
+                Header(HeaderNode {
+                    first: 8,
+                    last: 15,
+                    length: 2
+                }),
+                Header(HeaderNode {
+                    first: 9,
+                    last: 16,
+                    length: 3
+                }),
+                Spacer(SpacerNode {
+                    prev: usize::MAX,
+                    next: 9
+                }),
+                OptionItem(OptionItemNode {
+                    header: 0,
+                    above: 0,
+                    below: 0
+                }),
+                OptionItem(OptionItemNode {
+                    header: 2,
+                    above: 2,
+                    below: 12
+                }),
+                OptionItem(OptionItemNode {
+                    header: 3,
+                    above: 3,
+                    below: 15
+                }),
+                OptionItem(OptionItemNode {
+                    header: 4,
+                    above: 4,
+                    below: 13
+                }),
+                Spacer(SpacerNode {
+                    prev: 6,
+                    next: 13
+                }),
+                OptionItem(OptionItemNode {
+                    header: 1,
+                    above: 1,
+                    below: 1
+                }),
+                OptionItem(OptionItemNode {
+                    header: 2,
+                    above: 7,
+                    below: 2
+                }),
+                OptionItem(OptionItemNode {
+                    header: 4,
+                    above: 9,
+                    below: 16
+                }),
+                Spacer(SpacerNode {
+                    prev: 11,
+                    next: 16
+                }),
+                OptionItem(OptionItemNode {
+                    header: 3,
+                    above: 8,
+                    below: 3
+                }),
+                OptionItem(OptionItemNode {
+                    header: 4,
+                    above: 13,
+                    below: 4
+                })
+            ]),
+            primary_items_count: 0
         }
+    }
 
     #[cfg(test)]
     mod creation_tests {

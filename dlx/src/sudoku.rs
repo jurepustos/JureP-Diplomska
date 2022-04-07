@@ -232,7 +232,7 @@ mod dlx {
 
     pub fn sudoku_dlx(clues: &[Clue]) -> DLXIter<Item> {
         let items = make_items();
-        let mut grid = init_grid(clues);
+        let grid = init_grid(clues);
 
         let mut sets = Vec::new();
         for (number, row, column) in iproduct!(1..=9, 0..9, 0..9) {
