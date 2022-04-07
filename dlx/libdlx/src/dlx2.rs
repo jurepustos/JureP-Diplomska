@@ -96,56 +96,62 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
         }
     }
 
-    fn cover(&mut self, c: usize) {
-        self.left_links[self.right_links[c]] = self.left_links[c];
-        self.right_links[self.left_links[c]] = self.right_links[c];
+    fn cover(&mut self, column: usize) {
+        self.left_links[self.right_links[column]] = self.left_links[column];
+        self.right_links[self.left_links[column]] = self.right_links[column];
 
-        let mut i = self.down_links[c];
-        while i != c {
-            let mut j = i + 1;
-            while j != i {
-                let header = self.header_links[j];
-                // spacer
-                if header == 0 {
-                    j = self.up_links[j];
-                }
-                else {
-                    self.up_links[self.down_links[j]] = self.up_links[j];
-                    self.down_links[self.up_links[j]] = self.down_links[j];
-                    self.lengths[header] -= 1;
-
-                    j += 1;
-                }
-            }
-
+        let mut i = self.down_links[column];
+        while i != column {
+            self.hide(i);
             i = self.down_links[i];
         }
     }
 
-    fn uncover(&mut self, c: usize) {
-        let mut i = self.up_links[c];
-        while i != c {
-            let mut j = i - 1;
-            while j != i {
-                let header = self.header_links[j];
-                // spacer
-                if header == 0 {
-                    j = self.down_links[j];
-                }
-                else {
-                    self.lengths[header] += 1;
-                    self.up_links[self.down_links[j]] = j;
-                    self.down_links[self.up_links[j]] = j;
-
-                    j -= 1;
-                }
-            }
-
+    fn uncover(&mut self, column: usize) {
+        let mut i = self.up_links[column];
+        while i != column {
+            self.unhide(i);
             i = self.up_links[i];
         }
 
-        self.left_links[self.right_links[c]] = c;
-        self.right_links[self.left_links[c]] = c;
+        self.left_links[self.right_links[column]] = column;
+        self.right_links[self.left_links[column]] = column;
+    }
+    
+    fn hide(&mut self, i: usize) {
+        let mut j = i + 1;
+        while j != i {
+            let header = self.header_links[j];
+            // spacer
+            if header == 0 {
+                j = self.up_links[j];
+            }
+            else {
+                self.up_links[self.down_links[j]] = self.up_links[j];
+                self.down_links[self.up_links[j]] = self.down_links[j];
+                self.lengths[header] -= 1;
+
+                j += 1;
+            }
+        }
+    }
+
+    fn unhide(&mut self, i: usize) {
+        let mut j = i - 1;
+        while j != i {
+            let header = self.header_links[j];
+            // spacer
+            if header == 0 {
+                j = self.down_links[j];
+            }
+            else {
+                self.lengths[header] += 1;
+                self.up_links[self.down_links[j]] = j;
+                self.down_links[self.up_links[j]] = j;
+
+                j -= 1;
+            }
+        }
     }
 }
 
@@ -166,43 +172,67 @@ fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> usize {
     c
 }
 
+fn get_row<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>, row_node: usize) -> Vec<T> {
+    let mut option = vec![table.names[table.header_links[row_node]].unwrap()];
+    let mut k = row_node + 1;
+    while k != row_node {
+        let header = table.header_links[k];
+        if header == 0 {
+            k = table.up_links[k];
+        }
+        else {
+            option.push(table.names[table.header_links[k]].unwrap());
+            k += 1;
+        }
+    }
+
+    option
+}
+
+fn cover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
+    let mut j = row_node + 1;
+    while j != row_node {
+        let header = table.header_links[j];
+        if header == 0 {
+            j = table.up_links[j];
+        }
+        else {
+            table.cover(header);
+            j += 1;
+        }
+    }
+}
+
+fn uncover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
+    let mut j = row_node - 1;
+    while j != row_node {
+        let header = table.header_links[j];
+        if header == 0 {
+            j = table.down_links[j];
+        }
+        else {
+            table.uncover(header);
+            j -= 1;
+        }
+    }
+}
+
 
 
 fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &mut Vec<Vec<Vec<T>>>, solution: &mut Vec<Vec<T>>) {
-    let c = choose_column(table);
-    if c == 0 {
+    let column = choose_column(table);
+    if column == 0 {
         solutions.push(solution.clone());
     }
     else {
-        table.cover(c);
+        table.cover(column);
 
-        let mut r = table.down_links[c];
-        while r != c {
-            let mut j = r + 1;
-            while j != r {
-                let header = table.header_links[j];
-                if header == 0 {
-                    j = table.up_links[j];
-                }
-                else {
-                    table.cover(header);
-                    j += 1;
-                }
-            }
+        let mut row_node = table.down_links[column];
+        while row_node != column {
+            cover_row(table, row_node);
 
             // generate current option
-            let mut option = vec![table.names[table.header_links[r]].unwrap()];
-            let mut k = r + 1;
-            while k != r {
-                let header = table.header_links[k];
-                if header == 0 {
-                    k = table.up_links[k];
-                }
-                else {
-                    option.push(table.names[table.header_links[k]].unwrap());
-                    k += 1;
-                }
-            }
+            let option = get_row(table, row_node);
 
             // recursion
             // go to the next level
@@ -210,22 +240,12 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &m
             search(table, solutions, solution);
             solution.pop();
             
-            let mut j = r - 1;
-            while j != r {
-                let header = table.header_links[j];
-                if header == 0 {
-                    j = table.down_links[j];
-                }
-                else {
-                    table.uncover(header);
-                    j -= 1;
-                }
-            }
+            uncover_row(table, row_node);
 
-            r = table.down_links[r];
+            row_node = table.down_links[row_node];
         }
 
-        table.uncover(c);
+        table.uncover(column);
     }
 }
 
