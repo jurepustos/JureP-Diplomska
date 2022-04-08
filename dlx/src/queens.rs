@@ -3,8 +3,7 @@ pub use dfs::*;
 
 mod dlx {
 
-    use libdlx::dlx2;
-    use libdlx::{dlx, DLXIter};
+    use libdlx::{dlx, dlx_iter, DLXIter};
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
     pub enum Position {
@@ -53,7 +52,7 @@ mod dlx {
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
 
-        dlx(problem_sets, primary_items, secondary_items)
+        dlx_iter(problem_sets, primary_items, secondary_items)
     }
 
     pub fn dlx_to_solution(dlx_solution: &Vec<Vec<Position>>) -> Vec<(usize, usize)> {
@@ -77,11 +76,10 @@ mod dlx {
 
     pub fn n_queens_dlx(n : usize) -> Vec<Vec<(usize, usize)>> {
         let mut solutions = Vec::new();
-        // let dlx_solutions = n_queens_dlx_iter(n).collect::<Vec<_>>();
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let dlx_solutions = dlx2(problem_sets, primary_items, secondary_items);
+        let dlx_solutions = dlx(problem_sets, primary_items, secondary_items);
         for dlx_solution in dlx_solutions {
             solutions.push(dlx_to_solution(&dlx_solution));
         }

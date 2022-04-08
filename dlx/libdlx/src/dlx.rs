@@ -1,401 +1,357 @@
-use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
-use crate::dlx_table::DLXTable;
+#[derive(Clone,PartialEq,Eq,Debug)]
+struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
+    names: Vec<Option<T>>,
+    left_links: Vec<usize>,
+    right_links: Vec<usize>,
+    lengths: Vec<usize>,
+    up_links: Vec<usize>,
+    down_links: Vec<usize>,
+    header_links: Vec<usize>,
+    primary_count: usize
+}
 
-fn make_index_sets<T>(sets: &Vec<Vec<T>>, primary_items: &Vec<T>, secondary_items: &Vec<T>) -> Vec<Vec<usize>>
-    where T: Hash + Eq + Copy {
-    let mut item_map = primary_items
-        .iter()
-        .enumerate()
-        .map(|(i,item)| (*item,i))
-        .collect::<HashMap<T,usize>>();
+impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
+    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
+        let primary_count = primary_items.len();
+        let mut names = Vec::with_capacity(1 + primary_items.len() + secondary_items.len());
+        names.push(None);
+        for item in primary_items {
+            names.push(Some(item));
+        }
 
-    let secondaries = secondary_items
-        .iter()
-        .enumerate()
-        .map(|(i,item)| (*item,i))
-        .collect::<HashMap<T,usize>>();
+        for item in secondary_items {
+            names.push(Some(item));
+        }
 
-    for (item,_) in secondaries.into_iter() {
-        item_map.insert(item,item_map.len());
-    }
-
-    sets.iter()
-        .map(|set| set
+        let node_count = 1 + names.len() + sets.len() + sets
             .iter()
-            .map(|item| item_map[item])
-            .collect::<Vec<usize>>())
-        .collect::<Vec<_>>()
-}
+            .map(|set| set
+                .iter()
+                .map(|_| 1)
+                .sum::<usize>())
+            .sum::<usize>();
 
-fn get_item_set<T>(index_set: Vec<usize>, primary_items: &Vec<T>, secondary_items: &Vec<T>) -> Vec<T>
-    where T: Copy {
-    index_set
-        .into_iter()
-        .map(|i| primary_items.get(i)
-            .or(secondary_items.get(i)).cloned().into_iter())
-        .flatten()
-        .collect()
-}
+        let mut lengths = vec![0; names.len()];
+        let mut left_links = vec![0; names.len()];
+        let mut right_links = vec![0; names.len()];
+        let mut up_links = vec![0; node_count];
+        let mut down_links = vec![0; node_count];
+        let mut header_links = vec![0; node_count];
 
-fn get_item_cover<T>(index_cover: Vec<Vec<usize>>, primary_items: &Vec<T>,
-                     secondary_items: &Vec<T>) -> Vec<Vec<T>>
-    where T: Copy {
-    index_cover
-        .into_iter()
-        .map(|set| get_item_set(set, primary_items, secondary_items))
-        .collect()
-}
+        // header setup
+        left_links[0] = names.len() - 1;
+        for i in 0..names.len() - 1 {
+            left_links[i+1] = i;
+            right_links[i] = i+1;
+            up_links[i+1] = i+1;
+            down_links[i+1] = i+1;
+        }
 
-pub fn dlx<'a, T>(sets: Vec<Vec<T>>, primary_items: Vec<T>,
-              secondary_items: Vec<T>) -> DLXIter<T>
-    where T: Hash + Eq + Copy {
-    DLXIter::new(sets, primary_items, secondary_items)
-}
+        let mut prev_spacer = names.len();
+        
+        let mut current_index = names.len() + 1;
+        for set in sets {
+            if set.len() > 0 {
+                for item in set {
+                    let header_index = names
+                        .iter()
+                        .position(|name_opt| name_opt.is_some() && item == name_opt.unwrap())
+                        .unwrap();
+                    lengths[header_index] += 1;
+                    
+                    // node setup
+                    up_links[current_index] = up_links[header_index];
+                    down_links[current_index] = header_index;
+                    header_links[current_index] = header_index;
 
-#[derive(Clone,Copy,Debug)]
-struct CoverNode {
-    item: usize,
-    instance: usize
-}
+                    // uplink setup
+                    down_links[up_links[current_index]] = current_index;
+                    
+                    // header setup
+                    if down_links[header_index] == header_index {
+                        down_links[header_index] = current_index;
+                    }
+                    up_links[header_index] = current_index;
+                    
+                    current_index += 1;
+                }
+    
+                // spacer
+                up_links[current_index] = prev_spacer + 1;
+                down_links[prev_spacer] = current_index - 1;
+                prev_spacer = current_index;
+                current_index += 1;
+            }
+        }
 
-fn least_instances_item(table: &DLXTable) -> Option<usize> {
-    table.get_current_items()
-        .into_iter()
-        .map(|item| (item, table.get_instance_count(item)))
-        .min_by(|(_,c1),(_,c2)| c1.cmp(c2))
-        .map(|(item, _)| item)
-}
-
-fn next_level_node(table: &DLXTable) -> Option<CoverNode> {
-    if let Some(item) = least_instances_item(&table) {
-        if let Some(instance) = table.get_next_instance(item) {
-            return Some(CoverNode {
-                item,
-                instance
-            })
+        DLXTable {
+            names,
+            left_links,
+            right_links,
+            lengths,
+            up_links,
+            down_links,
+            header_links,
+            primary_count
         }
     }
-    None
-}
 
-fn extract_cover(table: &DLXTable, stack: &Vec<Cell<CoverNode>>) -> Vec<Vec<usize>> {
-    let mut cover = Vec::new();
-    for node_cell in stack {
-        let node = node_cell.get();
-        let set_items = table
-            .get_option_items(node.instance)
-            .into_iter()
-            .map(|item_index| table.get_item_value(item_index).unwrap())
-            .collect();
-        cover.push(set_items);
+    fn cover(&mut self, column: usize) {
+        self.left_links[self.right_links[column]] = self.left_links[column];
+        self.right_links[self.left_links[column]] = self.right_links[column];
+
+        let mut i = self.down_links[column];
+        while i != column {
+            self.hide(i);
+            i = self.down_links[i];
+        }
     }
 
-    cover
+    fn uncover(&mut self, column: usize) {
+        let mut i = self.up_links[column];
+        while i != column {
+            self.unhide(i);
+            i = self.up_links[i];
+        }
+
+        self.left_links[self.right_links[column]] = column;
+        self.right_links[self.left_links[column]] = column;
+    }
+    
+    fn hide(&mut self, i: usize) {
+        let mut j = i + 1;
+        while j != i {
+            let header = self.header_links[j];
+            // spacer
+            if header == 0 {
+                j = self.up_links[j];
+            }
+            else {
+                self.up_links[self.down_links[j]] = self.up_links[j];
+                self.down_links[self.up_links[j]] = self.down_links[j];
+                self.lengths[header] -= 1;
+
+                j += 1;
+            }
+        }
+    }
+
+    fn unhide(&mut self, i: usize) {
+        let mut j = i - 1;
+        while j != i {
+            let header = self.header_links[j];
+            // spacer
+            if header == 0 {
+                j = self.down_links[j];
+            }
+            else {
+                self.lengths[header] += 1;
+                self.up_links[self.down_links[j]] = j;
+                self.down_links[self.up_links[j]] = j;
+
+                j -= 1;
+            }
+        }
+    }
+}
+
+fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> Option<usize> {
+    let mut j = table.right_links[0];
+    let mut s = usize::MAX;
+    let mut c = None;
+    while j != 0 && j <= table.primary_count {
+        if table.lengths[j] < s {
+            c = Some(j);
+            s = table.lengths[j];
+        }
+        j = table.right_links[j];
+    }
+
+    c
+}
+
+fn get_row<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>, row_node: usize) -> Vec<T> {
+    let mut row = vec![table.names[table.header_links[row_node]].unwrap()];
+    let mut k = row_node + 1;
+    while k != row_node {
+        let header = table.header_links[k];
+        if header == 0 {
+            k = table.up_links[k];
+        }
+        else {
+            row.push(table.names[table.header_links[k]].unwrap());
+            k += 1;
+        }
+    }
+
+    row
+}
+
+fn cover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
+    let mut j = row_node + 1;
+    while j != row_node {
+        let header = table.header_links[j];
+        if header == 0 {
+            j = table.up_links[j];
+        }
+        else {
+            table.cover(header);
+            j += 1;
+        }
+    }
+}
+
+fn uncover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
+    let mut j = row_node - 1;
+    while j != row_node {
+        let header = table.header_links[j];
+        if header == 0 {
+            j = table.down_links[j];
+        }
+        else {
+            table.uncover(header);
+            j -= 1;
+        }
+    }
+}
+
+fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &mut Vec<Vec<usize>>, solution: &mut Vec<usize>) {
+    if let Some(column) = choose_column(table) {
+        table.cover(column);
+
+        let mut row_node = table.down_links[column];
+        while row_node != column {
+            cover_row(table, row_node);
+
+            // recursion
+            // go to the next level
+            solution.push(row_node);
+            search(table, solutions, solution);
+            solution.pop();
+            
+            uncover_row(table, row_node);
+
+            row_node = table.down_links[row_node];
+        }
+
+        table.uncover(column);
+    }
+    else {
+        solutions.push(solution.clone());
+    }
 }
 
 #[derive(PartialEq,Eq,Clone,Copy,Debug)]
+
 enum State {
-    Covering,
-    Backtracking
+    CoveringColumn,
+    CoveringRow,
+    BacktrackingColumn,
+    BacktrackingRow
 }
 
-pub fn dlx_run(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Vec<Vec<Vec<usize>>> {
-    BaseDLXIter::new(sets, primary_items_count)
-        .into_iter()
-        .collect()
+#[derive(PartialEq,Eq,Clone,Copy,Debug)]
+struct LevelState {
+    column: usize,
+    row_node: usize
 }
 
-struct BaseDLXIter {
-    table: DLXTable,
-    stack: Vec<Cell<CoverNode>>,
+pub struct DLXIter<T: Eq + Copy + std::fmt::Debug> {
+    table: DLXTable<T>,
+    stack: Vec<LevelState>,
     state: State
 }
 
-pub struct DLXIter<T> {
-    base: BaseDLXIter,
-    primary_items: Vec<T>,
-    secondary_items: Vec<T>
-}
+impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
+    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
+        let mut table = DLXTable::new(sets, primary_items, secondary_items);
+        let mut stack = Vec::new();
+        let state = State::CoveringRow;
+        if let Some(column) = choose_column(&table) {
+            let row_node = table.down_links[column];
+            stack.push(LevelState {
+                column,
+                row_node
+            });
+            table.cover(column);
+        }
 
-impl<T> DLXIter<T>
-    where T: Hash + Eq + Copy {
-    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>,
-               secondary_items: Vec<T>) -> Self {
-        let index_sets = make_index_sets(&sets, &primary_items, &secondary_items);
-        let base = BaseDLXIter::new(index_sets, primary_items.len());
-        DLXIter { base, primary_items, secondary_items }
+        DLXIter { table, stack, state }
     }
 }
 
-impl<T> Iterator for DLXIter<T>
-    where T: Hash + Eq + Copy {
+impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
     type Item = Vec<Vec<T>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.base.next() {
-            Some(cover) =>
-                Some(get_item_cover(cover, &self.primary_items, &self.secondary_items)),
-            None => None
-        }
-    }
-}
-
-impl BaseDLXIter {
-    pub fn new(sets: Vec<Vec<usize>>, primary_items_count: usize) -> Self {
-        let table = DLXTable::new(sets, primary_items_count);
-        println!("{:?}", table);
-        let stack = Vec::new();
-        let state = State::Covering;
-        let mut this = BaseDLXIter { table, stack, state };
-        if let Some(node) = this.next_level_node() {
-            this.table.cover(node.item);
-            this.stack.push(Cell::new(node));
-        }
-
-        this
-    }
-
-    fn least_instances_item(&self) -> Option<usize> {
-        self.table.get_current_items()
-            .into_iter()
-            .map(|item| (item, self.table.get_instance_count(item)))
-            .min_by(|(_,c1),(_,c2)| c1.cmp(c2))
-            .map(|(item,_)| item)
-    }
-
-    fn next_level_node(&mut self) -> Option<CoverNode> {
-        if let Some(item) = self.least_instances_item() {
-            if let Some(instance) = self.table.get_next_instance(item) {
-                return Some(CoverNode {
-                    item,
-                    instance
-                })
-            }
-        }
-        None
-    }
-
-    fn extract_cover(&self) -> Vec<Vec<usize>> {
-        let mut cover = Vec::new();
-        for node_cell in &self.stack {
-            let node = node_cell.get();
-            let set_items = self.table
-                .get_option_items(node.instance)
-                .into_iter()
-                .map(|item_index| self.table.get_item_value(item_index).unwrap())
-                .collect();
-            cover.push(set_items);
-        }
-        cover
-    }
-
-    fn cover_step(&mut self) -> Option<Vec<Vec<usize>>> {
-        let mut cover_opt = None;
-        if let Some(node_cell) = self.stack.last() {
-            let node = node_cell.get();
-            self.table.cover_option(node.instance);
-        }
-        if let Some(next_node) = self.next_level_node() {
-            // Cover the next node
-            self.stack.push(Cell::new(next_node));
-            self.table.cover(next_node.item);
-        } else {
-            // We reached the end, time to backtrack
-            // Return the solution if the entire table is covered
-            if let None = self.least_instances_item() {
-                // Save the solution
-                cover_opt = Some(self.extract_cover());
-            }
-            self.state = State::Backtracking;
-        }
-        cover_opt
-    }
-
-    fn backtrack(&mut self) {
-        if let Some(node_cell) = self.stack.last() {
-            let mut node = node_cell.get();
-            if let Some(next_instance) = self.table.get_next_instance(node.instance) {
-                // Cover the next set
-                self.table.uncover_option(node.instance);
-                node.instance = next_instance;
-                node_cell.replace(node);
-                self.state = State::Covering;
-            } else {
-                // Uncover the last item
-                self.stack.pop();
-                self.table.uncover_option(node.instance);
-                self.table.uncover(node.item);
-            }
-        }
-    }
-}
-
-impl Iterator for BaseDLXIter {
-    type Item = Vec<Vec<usize>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stack.is_empty() {
             match self.state {
-                State::Covering => {
-                    let solution_opt = self.cover_step();
-                    if let Some(cover) = solution_opt {
-                        return Some(cover)
+                State::CoveringColumn => {
+                    if let Some(column) = choose_column(&self.table) {
+                        self.table.cover(column);
+                        let row_node = self.table.down_links[column];
+                        self.stack.push(LevelState {
+                            column,
+                            row_node: self.table.down_links[column]
+                        });
+                        if row_node != column {
+                            self.state = State::CoveringRow;
+                        }
+                        else {
+                            self.state = State::BacktrackingColumn;
+                        }
+                    }
+                    else {
+                        self.state = State::BacktrackingRow;
+                        return Some(self.stack
+                            .iter()
+                            .map(|level| level.row_node)
+                            .map(|i| get_row(&self.table, i))
+                            .collect())
                     }
                 },
-                State::Backtracking => {
-                    self.backtrack();
+                State::CoveringRow => {
+                    let level = self.stack.last().unwrap();
+                    cover_row(&mut self.table, level.row_node);
+                    self.state = State::CoveringColumn;
+                },
+                State::BacktrackingRow => {
+                    let mut level = self.stack.pop().unwrap();
+                    uncover_row(&mut self.table, level.row_node);
+                    level.row_node = self.table.down_links[level.row_node];
+                    self.stack.push(level);
+                    if level.row_node != level.column {
+                        self.state = State::CoveringRow;
+                    }
+                    else {
+                        self.state = State::BacktrackingColumn;
+                    }
                 }
+                State::BacktrackingColumn => {
+                    let level = self.stack.pop().unwrap();
+                    self.table.uncover(level.column);
+                    self.state = State::BacktrackingRow;
+                },
             }
         }
         None
     }
 }
 
+pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> DLXIter<T> {
+    DLXIter::new(sets, primary_items, secondary_items)
+}
 
-#[cfg(test)]
-mod tests {
-    use std::collections::{BTreeSet, HashSet};
-    use std::hash::Hash;
-    use crate::dlx::{BaseDLXIter, DLXIter, dlx_run};
-
-    fn vec_equality<T: Eq>(first: &Vec<T>, second: &Vec<T>) -> bool {
-        for elem in first {
-            if !second.contains(elem) {
-                return false
-            }
-        }
-        true
-    }
-
-    fn deep_vec_equality<T: Eq>(first: &Vec<Vec<T>>, second: &Vec<Vec<T>>) -> bool {
-        for vec1 in first {
-            let mut equality = false;
-            for vec2 in second {
-                if vec_equality(vec1, vec2) {
-                    equality = true;
-                    break;
-                }
-            }
-            if !equality {
-                return false
-            }
-        }
-        true
-    }
-
-    fn named_dlx_run<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>,
-                        secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>>
-        where T: Eq + Hash + Copy {
-        DLXIter::new(sets, primary_items, secondary_items).collect()
-    }
-
-    fn ordered(solution: Vec<Vec<Vec<usize>>>) -> Vec<HashSet<BTreeSet<usize>>> {
-        solution
+pub fn dlx<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>> {
+    // DLXIter::new(sets, primary_items, secondary_items).collect()
+    let mut table = DLXTable::new(sets, primary_items, secondary_items);
+    let mut solutions = Vec::new();
+    search(&mut table, &mut solutions, &mut Vec::new());
+    solutions
+        .into_iter()
+        .map(|solution| solution
             .into_iter()
-            .map(|cover| cover
-                .into_iter()
-                .map(|set| set
-                    .into_iter()
-                    .collect::<BTreeSet<usize>>())
-                .collect::<HashSet<_>>())
-            .collect::<Vec<_>>()
-    }
-
-    #[test]
-    fn empty() {
-        let result = dlx_run(vec![], 0);
-        let expected: Vec<Vec<Vec<usize>>> = vec![];
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn empty_set() {
-        let result = dlx_run(vec![vec![]], 0);
-        let expected: Vec<Vec<Vec<usize>>> = vec![];
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn one_element() {
-        let result = dlx_run(vec![vec![0]], 1);
-        let expected = vec![vec![vec![0]]];
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn one_set() {
-        let result =
-            ordered(dlx_run(vec![vec![0,1,2]], 3));
-        let expected = ordered(vec![vec![vec![0,1,2]]]);
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn disjoint_sets() {
-        let result =
-            ordered(dlx_run(vec![vec![0,1,2], vec![3,4,5]], 6));
-        let expected =
-            ordered(vec![vec![vec![0,1,2], vec![3,4,5]]]);
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn overlapping_sets() {
-        let sets = vec![vec![0,1,2], vec![3,4,5], vec![3,4], vec![5]];
-        let result =
-            ordered(dlx_run(sets, 6));
-        let expected = ordered(vec![
-            vec![vec![0,1,2], vec![3,4,5]],
-            vec![vec![0,1,2], vec![3,4], vec![5]]]);
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn no_solutions() {
-        let sets = vec![vec![0,1,2], vec![3,4,5], vec![4,6]];
-        let result = dlx_run(sets, 7);
-        let expected: Vec<Vec<Vec<usize>>> = vec![];
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn secondary_items() {
-        let sets = vec![vec![0,1,2], vec![3,4,5], vec![3,6], vec![4,7]];
-        let result =
-            ordered(dlx_run(sets, 5));
-        let expected = ordered(vec![
-            vec![vec![0,1,2], vec![3,4,5]],
-            vec![vec![0,1,2], vec![3,6], vec![4,7]]]);
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn bigger_example() {
-        let sets = vec![
-            vec![2,4,5], vec![0,3,6], vec![1,2,5],
-            vec![0,3], vec![1,6], vec![3,4,6]
-        ];
-        let result = ordered(dlx_run(sets, 7));
-        let expected = ordered(vec![
-            vec![vec![0,3], vec![1,6], vec![2,4,5]]]);
-        assert_eq!(expected, result);
-    }
-
-    #[test]
-    fn custom_names() {
-        let sets = vec![
-            vec!['c', 'e', 'f'], vec!['a', 'd', 'g'], vec!['b', 'c', 'f'],
-            vec!['a', 'd'], vec!['b', 'g'], vec!['d', 'e', 'g']
-        ];
-        let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
-        let result =
-            named_dlx_run(sets, items, vec![]);
-        let expected = vec![
-            vec![vec!['a', 'd'], vec!['b', 'g'], vec!['c', 'e', 'f']]
-        ];
-        assert_eq!(1, result.len());
-        assert!(deep_vec_equality(&expected[0], &result[0]));
-    }
+            .map(|node_index| get_row(&table, node_index))
+            .collect())
+        .collect()
 }

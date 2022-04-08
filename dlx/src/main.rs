@@ -41,8 +41,8 @@ fn main() {
     
     for n in 0..=13 {
         println!("n = {}", n);
-        for solution in n_queens_dlx(n) {
-            print_solution(n, solution);
+        for solution in n_queens_dlx_iter(n) {
+            print_solution(n, dlx_to_solution(&solution));
             // println!("{:?}", dlx_solution);
             println!();
         }

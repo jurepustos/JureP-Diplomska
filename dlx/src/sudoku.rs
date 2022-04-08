@@ -147,7 +147,7 @@ fn init_grid(clues: &[Clue]) -> Grid {
 
 mod dlx {
     use itertools::iproduct;
-    use libdlx::{dlx, DLXIter};
+    use libdlx::{dlx, dlx_iter, DLXIter};
     use super::{Clue, get_block_index, init_grid};
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
@@ -241,7 +241,7 @@ mod dlx {
             }
         }
 
-        dlx(sets, items, vec![])
+        dlx_iter(sets, items, vec![])
     }
 }
 
