@@ -241,15 +241,113 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &m
     }
 }
 
+#[derive(PartialEq,Eq,Clone,Copy,Debug)]
+
+enum State {
+    CoveringColumn,
+    CoveringRow,
+    BacktrackingColumn,
+    BacktrackingRow
+}
+
+#[derive(PartialEq,Eq,Clone,Copy,Debug)]
+struct LevelState {
+    column: usize,
+    row_node: usize
+}
+
+struct SearchIter<T: Eq + Copy + std::fmt::Debug> {
+    table: DLXTable<T>,
+    stack: Vec<LevelState>,
+    state: State
+}
+
+impl<T: Eq + Copy + std::fmt::Debug> SearchIter<T> {
+    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
+        let mut table = DLXTable::new(sets, primary_items, secondary_items);
+        let mut stack = Vec::new();
+        let state = State::CoveringRow;
+        if let Some(column) = choose_column(&table) {
+            let row_node = table.down_links[column];
+            stack.push(LevelState {
+                column,
+                row_node
+            });
+            table.cover(column);
+        }
+
+        SearchIter { table, stack, state }
+    }
+}
+
+impl<T: Eq + Copy + std::fmt::Debug> Iterator for SearchIter<T> {
+    type Item = Vec<Vec<T>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.stack.is_empty() {
+            match self.state {
+                State::CoveringColumn => {
+                    if let Some(column) = choose_column(&self.table) {
+                        self.table.cover(column);
+                        let row_node = self.table.down_links[column];
+                        self.stack.push(LevelState {
+                            column,
+                            row_node: self.table.down_links[column]
+                        });
+                        if row_node != column {
+                            self.state = State::CoveringRow;
+                        }
+                        else {
+                            self.state = State::BacktrackingColumn;
+                        }
+                    }
+                    else {
+                        self.state = State::BacktrackingRow;
+                        return Some(self.stack
+                            .iter()
+                            .map(|level| level.row_node)
+                            .map(|i| get_row(&self.table, i))
+                            .collect())
+                    }
+                },
+                State::CoveringRow => {
+                    let level = self.stack.last().unwrap();
+                    cover_row(&mut self.table, level.row_node);
+                    self.state = State::CoveringColumn;
+                },
+                State::BacktrackingRow => {
+                    let mut level = self.stack.pop().unwrap();
+                    uncover_row(&mut self.table, level.row_node);
+                    level.row_node = self.table.down_links[level.row_node];
+                    self.stack.push(level);
+                    if level.row_node != level.column {
+                        self.state = State::CoveringRow;
+                    }
+                    else {
+                        self.state = State::BacktrackingColumn;
+                    }
+                }
+                State::BacktrackingColumn => {
+                    let level = self.stack.pop().unwrap();
+                    self.table.uncover(level.column);
+                    self.state = State::BacktrackingRow;
+                },
+            }
+        }
+        None
+    }
+}
+
 pub fn dlx<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>> {
-    let mut table = DLXTable::new(sets, primary_items, secondary_items);
-    let mut solutions = Vec::new();
-    search(&mut table, &mut solutions, &mut Vec::new());
-    solutions
-        .into_iter()
-        .map(|solution| solution
-            .into_iter()
-            .map(|node_index| get_row(&table, node_index))
-            .collect())
-        .collect()
+    SearchIter::new(sets, primary_items, secondary_items).collect()
+    // let mut table = DLXTable::new(sets, primary_items, secondary_items);
+    // let mut solutions = Vec::new();
+    // search(&mut table, &mut solutions, &mut Vec::new());
+    // solutions
+    //     .into_iter()
+    //     .map(|solution| solution
+    //         .into_iter()
+    //         .map(|node_index| get_row(&table, node_index))
+    //         .collect())
+    //     .collect()
 }

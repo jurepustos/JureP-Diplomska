@@ -39,12 +39,21 @@ fn main() {
     //     }
     // }
     
-    let n = 8;
-    for solution in n_queens_dlx(n) {
-        print_solution(n, solution);
-        // println!("{:?}", dlx_solution);
-        println!();
+    for n in 0..=13 {
+        println!("n = {}", n);
+        for solution in n_queens_dlx(n) {
+            print_solution(n, solution);
+            // println!("{:?}", dlx_solution);
+            println!();
+        }
+
     }
+    // println!();
+    // for solution in n_queens_dlx2(n) {
+    //     // print_solution(n, solution);
+    //     // println!("{:?}", dlx_solution);
+    //     println!();
+    // }
     // for solution in n_queens_dfs(n) {
     //     print_solution(n, solution);
     //     println!();    
