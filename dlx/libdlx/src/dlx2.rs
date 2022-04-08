@@ -155,16 +155,14 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     }
 }
 
-fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> usize {
+fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> Option<usize> {
     let mut j = table.right_links[0];
     let mut s = usize::MAX;
-    let mut c = 0;
-    while j != 0 {
-        if j <= table.primary_count {
-            if table.lengths[j] < s {
-                c = j;
-                s = table.lengths[j];
-            }
+    let mut c = None;
+    while j != 0 && j <= table.primary_count {
+        if table.lengths[j] < s {
+            c = Some(j);
+            s = table.lengths[j];
         }
         j = table.right_links[j];
     }
@@ -173,7 +171,7 @@ fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> usize {
 }
 
 fn get_row<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>, row_node: usize) -> Vec<T> {
-    let mut option = vec![table.names[table.header_links[row_node]].unwrap()];
+    let mut row = vec![table.names[table.header_links[row_node]].unwrap()];
     let mut k = row_node + 1;
     while k != row_node {
         let header = table.header_links[k];
@@ -181,12 +179,12 @@ fn get_row<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>, row_node: usize)
             k = table.up_links[k];
         }
         else {
-            option.push(table.names[table.header_links[k]].unwrap());
+            row.push(table.names[table.header_links[k]].unwrap());
             k += 1;
         }
     }
 
-    option
+    row
 }
 
 fn cover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
@@ -217,26 +215,17 @@ fn uncover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node
     }
 }
 
-
-
-fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &mut Vec<Vec<Vec<T>>>, solution: &mut Vec<Vec<T>>) {
-    let column = choose_column(table);
-    if column == 0 {
-        solutions.push(solution.clone());
-    }
-    else {
+fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &mut Vec<Vec<usize>>, solution: &mut Vec<usize>) {
+    if let Some(column) = choose_column(table) {
         table.cover(column);
 
         let mut row_node = table.down_links[column];
         while row_node != column {
             cover_row(table, row_node);
 
-            // generate current option
-            let option = get_row(table, row_node);
-
             // recursion
             // go to the next level
-            solution.push(option);
+            solution.push(row_node);
             search(table, solutions, solution);
             solution.pop();
             
@@ -247,6 +236,9 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &m
 
         table.uncover(column);
     }
+    else {
+        solutions.push(solution.clone());
+    }
 }
 
 pub fn dlx<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>> {
@@ -254,4 +246,10 @@ pub fn dlx<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec
     let mut solutions = Vec::new();
     search(&mut table, &mut solutions, &mut Vec::new());
     solutions
+        .into_iter()
+        .map(|solution| solution
+            .into_iter()
+            .map(|node_index| get_row(&table, node_index))
+            .collect())
+        .collect()
 }
