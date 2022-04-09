@@ -47,14 +47,6 @@ mod dlx {
         secondary_items
     }
 
-    pub fn n_queens_dlx_iter(n: usize) -> DLXIter<Position> {
-        let problem_sets = n_queens_problem(n);
-        let primary_items = make_primary_items(n);
-        let secondary_items = make_secondary_items(n);
-
-        dlx_iter(problem_sets, primary_items, secondary_items)
-    }
-
     pub fn dlx_to_solution(dlx_solution: &Vec<Vec<Position>>) -> Vec<(usize, usize)> {
         let mut solution = Vec::new();
         for option in dlx_solution {
@@ -74,16 +66,26 @@ mod dlx {
         solution
     }
 
-    pub fn n_queens_dlx(n : usize) -> Vec<Vec<(usize, usize)>> {
-        let mut solutions = Vec::new();
+    pub fn n_queens_dlx_iter(n: usize) -> Box<dyn Iterator<Item = Vec<(usize, usize)>>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let dlx_solutions = dlx(problem_sets, primary_items, secondary_items);
-        for dlx_solution in dlx_solutions {
-            solutions.push(dlx_to_solution(&dlx_solution));
-        }
+
+        let iter = dlx_iter(problem_sets, primary_items, secondary_items)
+            .map(|sol| dlx_to_solution(&sol));
+        Box::new(iter)
+    }
+
+    pub fn n_queens_dlx(n : usize) -> Vec<Vec<(usize, usize)>> {
+        let problem_sets = n_queens_problem(n);
+        let primary_items = make_primary_items(n);
+        let secondary_items = make_secondary_items(n);
+        let solutions = dlx(problem_sets, primary_items, secondary_items);
+
         solutions
+            .into_iter()
+            .map(|solution| dlx_to_solution(&solution))
+            .collect()
     }
 }
 

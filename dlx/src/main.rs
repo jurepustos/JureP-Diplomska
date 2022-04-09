@@ -3,6 +3,7 @@ mod bin_packing;
 mod sudoku;
 mod knapsack;
 
+use crate::sudoku::sudoku_dlx;
 use crate::queens::dlx_to_solution;
 use crate::queens::n_queens_dlx_iter;
 use crate::queens::n_queens_dlx;
@@ -10,7 +11,7 @@ use crate::queens::n_queens_dfs;
 use rand::{Rng, thread_rng};
 use libdlx::*;
 
-fn print_solution(n: usize, solution: Vec<(usize, usize)>) {
+fn print_queens_solution(n: usize, solution: Vec<(usize, usize)>) {
     let mut output = String::from("");
     for row in 0..n {
         for column in 0..n {
@@ -26,37 +27,25 @@ fn print_solution(n: usize, solution: Vec<(usize, usize)>) {
     println!("{}", output);
 }
 
-fn main() {
-    // for n in 1..=10 {
-    //     // for solution in n_queens_dfs(n) {
-    //     //     print_solution(n, solution);
-    //     //     println!();    
-    //     // }
-    //     for solution in n_queens_dlx(n) {
-    //         print_solution(n, solution);
-    //         // println!("{:?}", dlx_solution);
-    //         println!();
-    //     }
-    // }
-    
+fn solve_queens() {
     for n in 0..=13 {
         println!("n = {}", n);
         for solution in n_queens_dlx_iter(n) {
-            print_solution(n, dlx_to_solution(&solution));
+            print_queens_solution(n, solution);
             // println!("{:?}", dlx_solution);
             println!();
         }
-
     }
-    // println!();
-    // for solution in n_queens_dlx2(n) {
-    //     // print_solution(n, solution);
-    //     // println!("{:?}", dlx_solution);
-    //     println!();
-    // }
-    // for solution in n_queens_dfs(n) {
-    //     print_solution(n, solution);
-    //     println!();    
-    // }
+} 
+
+fn solve_sudoku() {
+    for solution in sudoku_dlx(&[]) {
+        println!("{:?}", solution);
+        println!();
+    }
+}
+
+fn main() {
+    solve_sudoku();
 }
 

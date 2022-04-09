@@ -230,7 +230,30 @@ mod dlx {
         ]
     }
 
-    pub fn sudoku_dlx(clues: &[Clue]) -> DLXIter<Item> {
+    fn to_clues(solution: &[Vec<Item>]) -> Vec<Clue> {
+        let mut clues = Vec::new();
+        for items in solution {
+            let mut row = 0;
+            let mut column = 0;
+            let mut number = 0;
+            for item in items {
+                if let Item::Position(pos_item) = item {
+                    row = pos_item.row;
+                    column = pos_item.column;
+                }
+                else if let Item::Row(row_item) = item {
+                    number = row_item.number;
+                }
+
+            }
+            let clue = Clue { row, column, number };
+            clues.push(clue);
+        }
+        
+        clues
+    }
+
+    pub fn sudoku_dlx(clues: &[Clue]) -> Box<dyn Iterator<Item = Vec<Clue>>> {
         let items = make_items();
         let grid = init_grid(clues);
 
@@ -241,7 +264,8 @@ mod dlx {
             }
         }
 
-        dlx_iter(sets, items, vec![])
+        Box::new(dlx_iter(sets, items, vec![])
+            .map(|solution| to_clues(&solution)))
     }
 }
 

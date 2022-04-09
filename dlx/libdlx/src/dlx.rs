@@ -343,7 +343,6 @@ pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items
 }
 
 pub fn dlx<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>> {
-    // DLXIter::new(sets, primary_items, secondary_items).collect()
     let mut table = DLXTable::new(sets, primary_items, secondary_items);
     let mut solutions = Vec::new();
     search(&mut table, &mut solutions, &mut Vec::new());
