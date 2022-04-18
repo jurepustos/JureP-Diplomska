@@ -1,174 +1,89 @@
 use std::mem::take;
 
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+pub enum Item<P, S, C> where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug { 
+    Primary(P),
+    Secondary(S),
+    ColoredSecondary(S, C),
+}
 
 #[derive(Clone,PartialEq,Eq,Debug)]
-pub struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
-    names: Vec<Option<T>>,
+pub struct DLXCTable<P, S, C> where 
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug  {
+    names: Vec<Option<Item<P, S, C>>>,
+    color_names: Vec<Option<C>>,
     left_links: Vec<usize>,
     right_links: Vec<usize>,
     lengths: Vec<usize>,
     up_links: Vec<usize>,
     down_links: Vec<usize>,
-    header_links: Vec<usize>
+    header_links: Vec<usize>,
+    colors: Vec<usize>
 }
 
-struct ColumnIter<'a> {
-    down_links: &'a [usize],
-    column: usize,
-    index: usize
-}
 
-impl<'a> ColumnIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, column: usize) -> Self
-        where T: Eq + Copy + std::fmt::Debug {
-        ColumnIter { 
-            down_links: &table.down_links, 
-            column, 
-            index: column 
-        }
+fn add_node<P, S, C>(table: &mut DLXCTable<P, S, C>, current_index: usize, item: Item<P, S, C>) 
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+    let header_index = table.names
+        .iter()
+        .position(|name_opt| name_opt.is_some() && item == name_opt.unwrap())
+        .unwrap();
+    table.lengths[header_index] += 1;
+    
+    // node setup
+    table.up_links[current_index] = table.up_links[header_index];
+    table.down_links[current_index] = header_index;
+    table.header_links[current_index] = header_index;
+
+    // uplink setup
+    table.down_links[table.up_links[current_index]] = current_index;
+    
+    // header setup
+    if table.down_links[header_index] == header_index {
+        table.down_links[header_index] = current_index;
     }
-} 
+    table.up_links[header_index] = current_index;
 
-impl<'a> Iterator for ColumnIter<'a> {    
-    type Item = usize;
-    fn next(&mut self) -> Option<Self::Item> {
-        let next_index = self.down_links[self.index];
-        if next_index != self.column {
-            self.index = next_index;
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-struct RevColumnIter<'a> {
-    up_links: &'a [usize],
-    column: usize,
-    index: usize
-}
-
-impl<'a> RevColumnIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, column: usize) -> Self
-        where T: Eq + Copy + std::fmt::Debug {
-        RevColumnIter { 
-            up_links: &table.down_links, 
-            column, 
-            index: column 
-        }
-    }
-} 
-
-impl<'a> Iterator for RevColumnIter<'a> {    
-    type Item = usize;
-    fn next(&mut self) -> Option<Self::Item> {
-        let next_index = self.up_links[self.index];
-        if next_index != self.column {
-            self.index = next_index;
-            Some(next_index)
-        }
-        else {
-            None
-        }
+    if let Item::ColoredSecondary(_, c) = item {
+        let color_index = table.color_names
+            .iter()
+            .position(|color| color.is_some() && c == color.unwrap())
+            .unwrap();
+        table.colors[current_index] = table.colors[color_index];
     }
 }
 
-struct RowIter<'a> {
-    header_links: &'a [usize],
-    up_links: &'a [usize],
-    row_node: usize,
-    index: usize
-}
-
-impl<'a> RowIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, row_node: usize) -> Self 
-        where T: Eq + Copy + std::fmt::Debug {
-        RowIter { 
-            header_links: &table.header_links, 
-            up_links: &table.up_links,
-            row_node, 
-            index: row_node 
-        }
-    }
-}
-
-impl<'a> Iterator for RowIter<'a> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let header = self.header_links[self.index];       
-        let next_index = 
-            if header == 0 {
-                self.up_links[self.index]
-            }
-            else {
-                self.index + 1
-            };
-        if next_index != self.row_node {
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-struct RevRowIter<'a> {
-    header_links: &'a [usize],
-    down_links: &'a [usize],
-    row_node: usize,
-    index: usize
-}
-
-impl<'a> RevRowIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, row_node: usize) -> Self 
-        where T: Eq + Copy + std::fmt::Debug{
-        RevRowIter { 
-            header_links: &table.header_links,
-            down_links: &table.down_links, 
-            row_node, 
-            index: row_node 
-        }
-    }
-}
-
-impl<'a> Iterator for RevRowIter<'a> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let header = self.header_links[self.index];       
-        let next_index = 
-            if header == 0 {
-                self.down_links[self.index]
-            }
-            else {
-                self.index - 1
-            };
-        if next_index != self.row_node {
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-
-impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
-    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
+impl<P, S, C> DLXCTable<P, S, C> where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+    pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
         let primary_count = primary_items.len();
         let mut names = Vec::with_capacity(1 + primary_items.len() + secondary_items.len());
         names.push(None);
         for item in primary_items {
-            names.push(Some(item));
+            names.push(Some(Item::Primary(item)));
         }
 
         for item in secondary_items {
-            names.push(Some(item));
+            names.push(Some(Item::Secondary(item)));
         }
 
         let names_count = names.len();
+        
+        
+        let mut color_names = vec![None; colors.len() + 1];
+        for color in colors {
+            color_names.push(Some(color));
+        }
 
         let node_count = 1 + names_count + sets.len() + sets
             .iter()
@@ -178,14 +93,16 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
                 .sum::<usize>())
             .sum::<usize>();
 
-        let mut table = DLXTable {
+        let mut table = DLXCTable {
             names,
+            color_names,
             left_links: vec![0; names_count],
             right_links: vec![0; names_count],
             lengths: vec![0; names_count],
             up_links: vec![0; node_count],
             down_links: vec![0; node_count],
-            header_links: vec![0; node_count]
+            header_links: vec![0; node_count],
+            colors: vec![0; node_count]
         };
 
         // header setup
@@ -204,26 +121,7 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
         for set in sets {
             if set.len() > 0 {
                 for item in set {
-                    let header_index = table.names
-                        .iter()
-                        .position(|name_opt| name_opt.is_some() && item == name_opt.unwrap())
-                        .unwrap();
-                    table.lengths[header_index] += 1;
-                    
-                    // node setup
-                    table.up_links[current_index] = table.up_links[header_index];
-                    table.down_links[current_index] = header_index;
-                    table.header_links[current_index] = header_index;
-
-                    // uplink setup
-                    table.down_links[table.up_links[current_index]] = current_index;
-                    
-                    // header setup
-                    if table.down_links[header_index] == header_index {
-                        table.down_links[header_index] = current_index;
-                    }
-                    table.up_links[header_index] = current_index;
-                    
+                    add_node(&mut table, current_index, item);
                     current_index += 1;
                 }
     
@@ -236,6 +134,60 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
         }
 
         table
+    }
+
+    fn commit(&mut self, row_node: usize) {
+        if self.colors[row_node] == 0 {
+            let header = self.header_links[row_node];
+            self.cover(header);
+        }
+        else {
+            self.purify(row_node);
+        }
+    }
+
+    fn uncommit(&mut self, row_node: usize) {
+        if self.colors[row_node] == 0 {
+            let header = self.header_links[row_node];
+            self.uncover(header);
+        }
+        else {
+            self.unpurify(row_node);
+        }
+    }
+
+    fn purify(&mut self, row_node: usize) {
+        let color = self.colors[row_node];
+        let header = self.header_links[row_node];
+        
+        let mut i = self.down_links[header];
+        while i != header {
+            if self.colors[i] == color {
+                self.colors[i] = usize::MAX;
+            }
+            else {
+                self.hide(i);
+            }
+
+            i = self.down_links[i];
+        }
+    }
+
+    fn unpurify(&mut self, row_node: usize) {
+        let color = self.colors[row_node];
+        let header = self.header_links[row_node];
+        
+        let mut i = self.up_links[header];
+        while i != header {
+            if self.colors[i] == usize::MAX {
+                self.colors[i] = color;
+            }
+            else {
+                self.unhide(i);
+            }
+
+            i = self.up_links[i];
+        }
     }
 
     fn cover(&mut self, column: usize) {
@@ -263,17 +215,18 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     fn hide(&mut self, row_node: usize) {
         let mut i = row_node + 1;
         while i != row_node {
-            let header = self.header_links[i];
-            // spacer
-            if header == 0 {
-                i = self.up_links[i];
-            }
-            else {
-                self.up_links[self.down_links[i]] = self.up_links[i];
-                self.down_links[self.up_links[i]] = self.down_links[i];
-                self.lengths[header] -= 1;
-
-                i += 1;
+            if self.colors[i] != usize::MAX {
+                let header = self.header_links[i];
+                if header == 0 {
+                    i = self.up_links[i];
+                }
+                else {
+                    self.up_links[self.down_links[i]] = self.up_links[i];
+                    self.down_links[self.up_links[i]] = self.down_links[i];
+                    self.lengths[header] -= 1;
+    
+                    i += 1;
+                }
             }
         }
     }
@@ -281,17 +234,18 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     fn unhide(&mut self, row_node: usize) {
         let mut i = row_node - 1;
         while i != row_node {
-            let header = self.header_links[i];
-            // spacer
-            if header == 0 {
-                i = self.down_links[i];
-            }
-            else {
-                self.lengths[header] += 1;
-                self.up_links[self.down_links[i]] = i;
-                self.down_links[self.up_links[i]] = i;
-
-                i -= 1;
+            if self.colors[i] != usize::MAX {
+                let header = self.header_links[i];
+                if header == 0 {
+                    i = self.down_links[i];
+                }
+                else {
+                    self.lengths[header] += 1;
+                    self.up_links[self.down_links[i]] = i;
+                    self.down_links[self.up_links[i]] = i;
+    
+                    i -= 1;
+                }
             }
         }
     }
@@ -304,7 +258,7 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
                 i = self.up_links[i];
             }
             else {
-                self.cover(header);
+                self.commit(i);
                 i += 1;
             }
         }
@@ -318,13 +272,13 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
                 i = self.down_links[i];
             }
             else {
-                self.uncover(header);
+                self.uncommit(i);
                 i -= 1;
             }
         }
     }
 
-    fn get_row(&self, row_node: usize) -> Vec<T> {
+    fn get_row(&self, row_node: usize) -> Vec<Item<P, S, C>> {
         let mut row = vec![self.names[self.header_links[row_node]].unwrap()];
         let mut k = row_node + 1;
         while k != row_node {
@@ -333,7 +287,7 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
                 k = self.up_links[k];
             }
             else {
-                let item = self.names[self.header_links[k]].unwrap(); 
+                let item = self.names[self.header_links[k]].unwrap();
                 row.push(item);
                 k += 1;
             }
@@ -343,7 +297,11 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     }
 }
 
-fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> Option<usize> {
+fn choose_column<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize> 
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
     let mut j = table.right_links[0];
     let mut s = usize::MAX;
     let mut c = None;
@@ -358,7 +316,11 @@ fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> Option<
     c
 }
 
-fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>) -> Option<Vec<usize>> {
+fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, solution: &mut Vec<usize>) -> Option<Vec<usize>>
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
     if let Some(column) = choose_column(table) {
         table.cover(column);
 
@@ -389,7 +351,6 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mu
 }
 
 #[derive(PartialEq,Eq,Clone,Copy,Debug)]
-
 enum State {
     CoveringColumn,
     CoveringRow,
@@ -403,15 +364,22 @@ struct LevelState {
     row_node: usize
 }
 
-pub struct DLXIter<T: Eq + Copy + std::fmt::Debug> {
-    table: DLXTable<T>,
+pub struct DLXIter<P, S, C> where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+    table: DLXCTable<P, S, C>,
     stack: Vec<LevelState>,
     state: State
 }
 
-impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
-    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
-        let mut table = DLXTable::new(sets, primary_items, secondary_items);
+impl<P, S, C> DLXIter<P, S, C>
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+    pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
+        let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let mut stack = Vec::new();
         let state = State::CoveringRow;
         if let Some(column) = choose_column(&table) {
@@ -442,7 +410,7 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
         }
     }
 
-    fn get_solution(&self) -> Vec<Vec<T>> {
+    fn get_solution(&self) -> Vec<Vec<Item<P, S, C>>> {
         self.stack
             .iter()
             .map(|level| level.row_node)
@@ -467,8 +435,11 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
     }
 }
 
-impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
-    type Item = Vec<Vec<T>>;
+impl<P, S, C> Iterator for DLXIter<P, S, C> where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+    type Item = Vec<Vec<Item<P, S, C>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stack.is_empty() {
@@ -507,14 +478,20 @@ impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
     }
 }
 
-pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> DLXIter<T> {
-    DLXIter::new(sets, primary_items, secondary_items)
+pub fn dlx_iter<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> DLXIter<P, S, C>
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+    DLXIter::new(sets, primary_items, secondary_items, colors)
 }
 
-pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Option<Vec<Vec<T>>>
-    where T: Eq + Copy + std::fmt::Debug {
-
-    let mut table = DLXTable::new(sets, primary_items, secondary_items);
+pub fn dlx_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Option<Vec<Vec<Item<P, S, C>>>>
+    where 
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug  {
+    let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
     search(&mut table, &mut Vec::new())
         .map(|solution| solution
             .into_iter()
