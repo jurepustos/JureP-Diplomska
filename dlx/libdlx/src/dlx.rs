@@ -2,7 +2,7 @@ use std::mem::take;
 
 
 #[derive(Clone,PartialEq,Eq,Debug)]
-struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
+pub struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
     names: Vec<Option<T>>,
     left_links: Vec<usize>,
     right_links: Vec<usize>,
@@ -12,6 +12,145 @@ struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
     header_links: Vec<usize>,
     primary_count: usize
 }
+
+struct ColumnIter<'a> {
+    down_links: &'a [usize],
+    column: usize,
+    index: usize
+}
+
+impl<'a> ColumnIter<'a> {
+    fn new<T>(table: &'a DLXTable<T>, column: usize) -> Self
+        where T: Eq + Copy + std::fmt::Debug {
+        ColumnIter { 
+            down_links: &table.down_links, 
+            column, 
+            index: column }
+    }
+} 
+
+impl<'a> Iterator for ColumnIter<'a> {    
+    type Item = usize;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_index = self.down_links[self.index];
+        if next_index != self.column {
+            self.index = next_index;
+            Some(next_index)
+        }
+        else {
+            None
+        }
+    }
+}
+
+struct RevColumnIter<'a> {
+    up_links: &'a [usize],
+    column: usize,
+    index: usize
+}
+
+impl<'a> RevColumnIter<'a> {
+    fn new<T>(table: &'a DLXTable<T>, column: usize) -> Self
+        where T: Eq + Copy + std::fmt::Debug {
+        RevColumnIter { 
+            up_links: &table.down_links, 
+            column, 
+            index: column }
+    }
+} 
+
+impl<'a> Iterator for RevColumnIter<'a> {    
+    type Item = usize;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_index = self.up_links[self.index];
+        if next_index != self.column {
+            self.index = next_index;
+            Some(next_index)
+        }
+        else {
+            None
+        }
+    }
+}
+
+struct RowIter<'a> {
+    header_links: &'a [usize],
+    up_links: &'a [usize],
+    row_node: usize,
+    index: usize
+}
+
+impl<'a> RowIter<'a> {
+    fn new<T>(table: &'a DLXTable<T>, row_node: usize) -> Self 
+        where T: Eq + Copy + std::fmt::Debug {
+        RowIter { 
+            header_links: &table.header_links, 
+            up_links: &table.up_links,
+            row_node, 
+            index: row_node }
+    }
+}
+
+impl<'a> Iterator for RowIter<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let header = self.header_links[self.index];       
+        let next_index = 
+            if header == 0 {
+                self.up_links[self.index]
+            }
+            else {
+                self.index + 1
+            };
+        if next_index != self.row_node {
+            Some(next_index)
+        }
+        else {
+            None
+        }
+    }
+}
+
+struct RevRowIter<'a> {
+    header_links: &'a [usize],
+    down_links: &'a [usize],
+    row_node: usize,
+    index: usize
+}
+
+impl<'a> RevRowIter<'a> {
+    fn new<T>(table: &'a DLXTable<T>, row_node: usize) -> Self 
+        where T: Eq + Copy + std::fmt::Debug{
+        RevRowIter { 
+            header_links: &table.header_links,
+            down_links: &table.down_links, 
+            row_node, 
+            index: row_node }
+    }
+}
+
+impl<'a> Iterator for RevRowIter<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let header = self.header_links[self.index];       
+        let next_index = 
+            if header == 0 {
+                self.down_links[self.index]
+            }
+            else {
+                self.index - 1
+            };
+        if next_index != self.row_node {
+            Some(next_index)
+        }
+        else {
+            None
+        }
+    }
+}
+
 
 impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
@@ -118,40 +257,85 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
         self.right_links[self.left_links[column]] = column;
     }
     
-    fn hide(&mut self, i: usize) {
-        let mut j = i + 1;
-        while j != i {
-            let header = self.header_links[j];
+    fn hide(&mut self, row_node: usize) {
+        let mut i = row_node + 1;
+        while i != row_node {
+            let header = self.header_links[i];
             // spacer
             if header == 0 {
-                j = self.up_links[j];
+                i = self.up_links[i];
             }
             else {
-                self.up_links[self.down_links[j]] = self.up_links[j];
-                self.down_links[self.up_links[j]] = self.down_links[j];
+                self.up_links[self.down_links[i]] = self.up_links[i];
+                self.down_links[self.up_links[i]] = self.down_links[i];
                 self.lengths[header] -= 1;
 
-                j += 1;
+                i += 1;
             }
         }
     }
 
-    fn unhide(&mut self, i: usize) {
-        let mut j = i - 1;
-        while j != i {
-            let header = self.header_links[j];
+    fn unhide(&mut self, row_node: usize) {
+        let mut i = row_node - 1;
+        while i != row_node {
+            let header = self.header_links[i];
             // spacer
             if header == 0 {
-                j = self.down_links[j];
+                i = self.down_links[i];
             }
             else {
                 self.lengths[header] += 1;
-                self.up_links[self.down_links[j]] = j;
-                self.down_links[self.up_links[j]] = j;
+                self.up_links[self.down_links[i]] = i;
+                self.down_links[self.up_links[i]] = i;
 
-                j -= 1;
+                i -= 1;
             }
         }
+    }
+
+    fn cover_row(&mut self, row_node: usize) {
+        let mut i = row_node + 1;
+        while i != row_node {
+            let header = self.header_links[i];
+            if header == 0 {
+                i = self.up_links[i];
+            }
+            else {
+                self.cover(header);
+                i += 1;
+            }
+        }
+    }
+    
+    fn uncover_row(&mut self, row_node: usize) {
+        let mut i = row_node - 1;
+        while i != row_node {
+            let header = self.header_links[i];
+            if header == 0 {
+                i = self.down_links[i];
+            }
+            else {
+                self.uncover(header);
+                i -= 1;
+            }
+        }
+    }
+
+    fn get_row(&self, row_node: usize) -> Vec<T> {
+        let mut row = vec![self.names[self.header_links[row_node]].unwrap()];
+        let mut k = row_node + 1;
+        while k != row_node {
+            let header = self.header_links[k];
+            if header == 0 {
+                k = self.up_links[k];
+            }
+            else {
+                row.push(self.names[self.header_links[k]].unwrap());
+                k += 1;
+            }
+        }
+    
+        row
     }
 }
 
@@ -170,58 +354,13 @@ fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> Option<
     c
 }
 
-fn get_row<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>, row_node: usize) -> Vec<T> {
-    let mut row = vec![table.names[table.header_links[row_node]].unwrap()];
-    let mut k = row_node + 1;
-    while k != row_node {
-        let header = table.header_links[k];
-        if header == 0 {
-            k = table.up_links[k];
-        }
-        else {
-            row.push(table.names[table.header_links[k]].unwrap());
-            k += 1;
-        }
-    }
-
-    row
-}
-
-fn cover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
-    let mut j = row_node + 1;
-    while j != row_node {
-        let header = table.header_links[j];
-        if header == 0 {
-            j = table.up_links[j];
-        }
-        else {
-            table.cover(header);
-            j += 1;
-        }
-    }
-}
-
-fn uncover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node: usize) {
-    let mut j = row_node - 1;
-    while j != row_node {
-        let header = table.header_links[j];
-        if header == 0 {
-            j = table.down_links[j];
-        }
-        else {
-            table.uncover(header);
-            j -= 1;
-        }
-    }
-}
-
 fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>) -> Option<Vec<usize>> {
     if let Some(column) = choose_column(table) {
         table.cover(column);
 
         let mut row_node = table.down_links[column];
         while row_node != column {
-            cover_row(table, row_node);
+            table.cover_row(row_node);
 
             // recursion
             // go to the next level
@@ -232,7 +371,7 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mu
             }
             solution.pop();
             
-            uncover_row(table, row_node);
+            table.uncover_row(row_node);
 
             row_node = table.down_links[row_node];
         }
@@ -282,6 +421,46 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
 
         DLXIter { table, stack, state }
     }
+
+    fn cover_column(&mut self, column: usize) {
+        self.table.cover(column);
+        let row_node = self.table.down_links[column];
+        self.stack.push(LevelState { column, row_node });
+
+        if row_node == column {
+            // the column is empty
+            // set up to return to the previous level
+            self.state = State::BacktrackingColumn;
+        }
+        else {
+            // cover the first row
+            self.state = State::CoveringRow;
+        }
+    }
+
+    fn get_solution(&self) -> Vec<Vec<T>> {
+        self.stack
+            .iter()
+            .map(|level| level.row_node)
+            .map(|i| self.table.get_row(i))
+            .collect()
+    }
+
+    fn backtrack_row(&mut self) {
+        let mut level = self.stack.pop().unwrap();
+        self.table.uncover_row(level.row_node);
+        level.row_node = self.table.down_links[level.row_node];
+        self.stack.push(level);
+        if level.row_node == level.column {
+            // we tried the last row
+            // set up to return to the previous level
+            self.state = State::BacktrackingColumn;
+        }
+        else {
+            // cover the next row
+            self.state = State::CoveringRow;
+        }
+    }
 }
 
 impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
@@ -293,53 +472,23 @@ impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
                 State::CoveringColumn => {
                     if let Some(column) = choose_column(&self.table) {
                         // cover next column
-                        self.table.cover(column);
-                        let row_node = self.table.down_links[column];
-                        self.stack.push(LevelState { column, row_node });
-
-                        if row_node == column {
-                            // the column is empty
-                            // set up to return to the previous level
-                            self.state = State::BacktrackingColumn;
-                        }
-                        else {
-                            // cover the first row
-                            self.state = State::CoveringRow;
-                        }
+                        self.cover_column(column);
                     }
                     else {
                         // all columns are covered
-                        // we have found a solution
-                        // return the solution and set up for the next row 
                         self.state = State::BacktrackingRow;
-                        return Some(self.stack
-                            .iter()
-                            .map(|level| level.row_node)
-                            .map(|i| get_row(&self.table, i))
-                            .collect())
+                        return Some(self.get_solution())
                     }
                 },
                 State::CoveringRow => {
                     // cover the current row and set up for the next level 
                     let level = self.stack.last().unwrap();
-                    cover_row(&mut self.table, level.row_node);
+                    self.table.cover_row(level.row_node);
                     self.state = State::CoveringColumn;
                 },
                 State::BacktrackingRow => {
                     // uncover the current row and set up to cover the next one
-                    let mut level = self.stack.pop().unwrap();
-                    uncover_row(&mut self.table, level.row_node);
-                    level.row_node = self.table.down_links[level.row_node];
-                    self.stack.push(level);
-                    if level.row_node == level.column {
-                        // we tried the last row
-                        // set up to return to the previous level
-                        self.state = State::BacktrackingColumn;
-                    }
-                    else {
-                        // cover the next row
-                        self.state = State::CoveringRow;
-                    }
+                    self.backtrack_row()
                 }
                 State::BacktrackingColumn => {
                     // uncover the last covered column
@@ -365,6 +514,6 @@ pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: V
     search(&mut table, &mut Vec::new())
         .map(|solution| solution
             .into_iter()
-            .map(|node_index| get_row(&table, node_index))
+            .map(|node_index| table.get_row(node_index))
             .collect())
 }
