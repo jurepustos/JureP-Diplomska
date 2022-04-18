@@ -1,7 +1,7 @@
 use std::collections::{HashMap};
 use std::ops::{Index, IndexMut};
 
-pub use dlx::{sudoku_dlx};
+pub use dlx::{sudoku_dlx, sudoku_dlx_first};
 pub use dfs::{sudoku_dfs};
 
 #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
@@ -147,7 +147,7 @@ fn init_grid(clues: &[Clue]) -> Grid {
 
 mod dlx {
     use itertools::iproduct;
-    use libdlx::{dlx, dlx_iter, DLXIter};
+    use libdlx::{dlx_first, dlx_iter, DLXIter};
     use super::{Clue, get_block_index, init_grid};
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
@@ -266,6 +266,20 @@ mod dlx {
 
         Box::new(dlx_iter(sets, items, vec![])
             .map(|solution| to_clues(&solution)))
+    }
+
+    pub fn sudoku_dlx_first(clues: &[Clue]) -> Option<Vec<Clue>> {
+        let items = make_items();
+        let grid = init_grid(clues);
+
+        let mut sets = Vec::new();
+        for (number, row, column) in iproduct!(1..=9, 0..9, 0..9) {
+            if grid[(row, column, number)] {
+                sets.push(make_option(row, column, number));
+            }
+        }
+    
+        dlx_first(sets, items, vec![]).map(|solution| to_clues(&solution))
     }
 }
 

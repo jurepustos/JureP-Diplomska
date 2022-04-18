@@ -3,7 +3,7 @@ pub use dfs::*;
 
 mod dlx {
 
-    use libdlx::{dlx, dlx_iter, DLXIter};
+    use libdlx::*;
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
     pub enum Position {
@@ -76,16 +76,13 @@ mod dlx {
         Box::new(iter)
     }
 
-    pub fn n_queens_dlx(n : usize) -> Vec<Vec<(usize, usize)>> {
+    pub fn n_queens_dlx_first(n : usize) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let solutions = dlx(problem_sets, primary_items, secondary_items);
+        let solution = dlx_first(problem_sets, primary_items, secondary_items);
 
-        solutions
-            .into_iter()
-            .map(|solution| dlx_to_solution(&solution))
-            .collect()
+        solution.map(|sol| dlx_to_solution(&sol))
     }
 }
 
@@ -125,5 +122,27 @@ mod dfs {
             }
         }
         solutions
+    }
+
+    pub fn n_queens_dfs_first(n: usize) -> Vec<(usize, usize)> {
+        let mut stack = vec![Vec::new()];
+        while let Some(solution) = stack.pop() {
+            if conflict(&solution) {
+                continue;
+            }
+
+            let row = solution.len();
+            if row == n {
+                return solution
+            }
+
+            for column in 0..n {
+                let queen = (row, column);
+                let mut queens = solution.clone();
+                queens.push(queen);
+                stack.push(queens);
+            }
+        }
+        Vec::new()
     }
 }

@@ -1,3 +1,6 @@
+use std::mem::take;
+
+
 #[derive(Clone,PartialEq,Eq,Debug)]
 struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
     names: Vec<Option<T>>,
@@ -23,7 +26,9 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
             names.push(Some(item));
         }
 
-        let node_count = 1 + names.len() + sets.len() + sets
+        let names_count = names.len();
+
+        let node_count = 1 + names_count + sets.len() + sets
             .iter()
             .map(|set| set
                 .iter()
@@ -31,69 +36,64 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
                 .sum::<usize>())
             .sum::<usize>();
 
-        let mut lengths = vec![0; names.len()];
-        let mut left_links = vec![0; names.len()];
-        let mut right_links = vec![0; names.len()];
-        let mut up_links = vec![0; node_count];
-        let mut down_links = vec![0; node_count];
-        let mut header_links = vec![0; node_count];
+        let mut table = DLXTable {
+            names,
+            left_links: vec![0; names_count],
+            right_links: vec![0; names_count],
+            lengths: vec![0; names_count],
+            up_links: vec![0; node_count],
+            down_links: vec![0; node_count],
+            header_links: vec![0; node_count],
+            primary_count
+        };
 
         // header setup
-        left_links[0] = names.len() - 1;
-        for i in 0..names.len() - 1 {
-            left_links[i+1] = i;
-            right_links[i] = i+1;
-            up_links[i+1] = i+1;
-            down_links[i+1] = i+1;
+        table.left_links[0] = names_count - 1;
+        for i in 0..names_count - 1 {
+            table.left_links[i+1] = i;
+            table.right_links[i] = i+1;
+            table.up_links[i+1] = i+1;
+            table.down_links[i+1] = i+1;
         }
 
-        let mut prev_spacer = names.len();
+        let mut prev_spacer = names_count;
         
-        let mut current_index = names.len() + 1;
+        let mut current_index = names_count + 1;
         for set in sets {
             if set.len() > 0 {
                 for item in set {
-                    let header_index = names
+                    let header_index = table.names
                         .iter()
                         .position(|name_opt| name_opt.is_some() && item == name_opt.unwrap())
                         .unwrap();
-                    lengths[header_index] += 1;
+                    table.lengths[header_index] += 1;
                     
                     // node setup
-                    up_links[current_index] = up_links[header_index];
-                    down_links[current_index] = header_index;
-                    header_links[current_index] = header_index;
+                    table.up_links[current_index] = table.up_links[header_index];
+                    table.down_links[current_index] = header_index;
+                    table.header_links[current_index] = header_index;
 
                     // uplink setup
-                    down_links[up_links[current_index]] = current_index;
+                    table.down_links[table.up_links[current_index]] = current_index;
                     
                     // header setup
-                    if down_links[header_index] == header_index {
-                        down_links[header_index] = current_index;
+                    if table.down_links[header_index] == header_index {
+                        table.down_links[header_index] = current_index;
                     }
-                    up_links[header_index] = current_index;
+                    table.up_links[header_index] = current_index;
                     
                     current_index += 1;
                 }
     
                 // spacer
-                up_links[current_index] = prev_spacer + 1;
-                down_links[prev_spacer] = current_index - 1;
+                table.up_links[current_index] = prev_spacer + 1;
+                table.down_links[prev_spacer] = current_index - 1;
                 prev_spacer = current_index;
                 current_index += 1;
             }
         }
 
-        DLXTable {
-            names,
-            left_links,
-            right_links,
-            lengths,
-            up_links,
-            down_links,
-            header_links,
-            primary_count
-        }
+        table
     }
 
     fn cover(&mut self, column: usize) {
@@ -215,7 +215,7 @@ fn uncover_row<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, row_node
     }
 }
 
-fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &mut Vec<Vec<usize>>, solution: &mut Vec<usize>) {
+fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>) -> Option<Vec<usize>> {
     if let Some(column) = choose_column(table) {
         table.cover(column);
 
@@ -226,7 +226,10 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &m
             // recursion
             // go to the next level
             solution.push(row_node);
-            search(table, solutions, solution);
+            let res = search(table, solution);
+            if let Some(sol) = res {
+                return Some(sol)
+            }
             solution.pop();
             
             uncover_row(table, row_node);
@@ -235,9 +238,10 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solutions: &m
         }
 
         table.uncover(column);
+        None
     }
     else {
-        solutions.push(solution.clone());
+        Some(take(solution))
     }
 }
 
@@ -288,20 +292,25 @@ impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
             match self.state {
                 State::CoveringColumn => {
                     if let Some(column) = choose_column(&self.table) {
+                        // cover next column
                         self.table.cover(column);
                         let row_node = self.table.down_links[column];
-                        self.stack.push(LevelState {
-                            column,
-                            row_node: self.table.down_links[column]
-                        });
-                        if row_node != column {
-                            self.state = State::CoveringRow;
+                        self.stack.push(LevelState { column, row_node });
+
+                        if row_node == column {
+                            // the column is empty
+                            // set up to return to the previous level
+                            self.state = State::BacktrackingColumn;
                         }
                         else {
-                            self.state = State::BacktrackingColumn;
+                            // cover the first row
+                            self.state = State::CoveringRow;
                         }
                     }
                     else {
+                        // all columns are covered
+                        // we have found a solution
+                        // return the solution and set up for the next row 
                         self.state = State::BacktrackingRow;
                         return Some(self.stack
                             .iter()
@@ -311,23 +320,30 @@ impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
                     }
                 },
                 State::CoveringRow => {
+                    // cover the current row and set up for the next level 
                     let level = self.stack.last().unwrap();
                     cover_row(&mut self.table, level.row_node);
                     self.state = State::CoveringColumn;
                 },
                 State::BacktrackingRow => {
+                    // uncover the current row and set up to cover the next one
                     let mut level = self.stack.pop().unwrap();
                     uncover_row(&mut self.table, level.row_node);
                     level.row_node = self.table.down_links[level.row_node];
                     self.stack.push(level);
-                    if level.row_node != level.column {
-                        self.state = State::CoveringRow;
+                    if level.row_node == level.column {
+                        // we tried the last row
+                        // set up to return to the previous level
+                        self.state = State::BacktrackingColumn;
                     }
                     else {
-                        self.state = State::BacktrackingColumn;
+                        // cover the next row
+                        self.state = State::CoveringRow;
                     }
                 }
                 State::BacktrackingColumn => {
+                    // uncover the last covered column
+                    // and set up to continue
                     let level = self.stack.pop().unwrap();
                     self.table.uncover(level.column);
                     self.state = State::BacktrackingRow;
@@ -342,15 +358,13 @@ pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items
     DLXIter::new(sets, primary_items, secondary_items)
 }
 
-pub fn dlx<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Vec<Vec<Vec<T>>> {
+pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Option<Vec<Vec<T>>>
+    where T: Eq + Copy + std::fmt::Debug {
+
     let mut table = DLXTable::new(sets, primary_items, secondary_items);
-    let mut solutions = Vec::new();
-    search(&mut table, &mut solutions, &mut Vec::new());
-    solutions
-        .into_iter()
+    search(&mut table, &mut Vec::new())
         .map(|solution| solution
             .into_iter()
             .map(|node_index| get_row(&table, node_index))
             .collect())
-        .collect()
 }
