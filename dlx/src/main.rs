@@ -1,5 +1,6 @@
 mod queens;
 mod sudoku;
+mod vertex_cover;
 
 use crate::sudoku::sudoku_dlx_first;
 use std::time::Instant;

@@ -1,20 +1,22 @@
 use std::mem::take;
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
-pub enum Item<P, S, C> where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug { 
+pub enum Item<P, S, C> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug { 
     Primary(P),
     Secondary(S),
     ColoredSecondary(S, C),
 }
 
 #[derive(Clone,PartialEq,Eq,Debug)]
-pub struct DLXCTable<P, S, C> where 
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug  {
+pub struct DLXCTable<P, S, C> 
+where 
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug  {
     names: Vec<Option<Item<P, S, C>>>,
     color_names: Vec<Option<C>>,
     left_links: Vec<usize>,
@@ -28,10 +30,10 @@ pub struct DLXCTable<P, S, C> where
 
 
 fn add_node<P, S, C>(table: &mut DLXCTable<P, S, C>, current_index: usize, item: Item<P, S, C>) 
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     let header_index = table.names
         .iter()
         .position(|name_opt| name_opt.is_some() && item == name_opt.unwrap())
@@ -61,10 +63,11 @@ fn add_node<P, S, C>(table: &mut DLXCTable<P, S, C>, current_index: usize, item:
     }
 }
 
-impl<P, S, C> DLXCTable<P, S, C> where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+impl<P, S, C> DLXCTable<P, S, C> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
         let primary_count = primary_items.len();
         let mut names = Vec::with_capacity(1 + primary_items.len() + secondary_items.len());
@@ -298,10 +301,10 @@ impl<P, S, C> DLXCTable<P, S, C> where
 }
 
 fn choose_column<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize> 
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     let mut j = table.right_links[0];
     let mut s = usize::MAX;
     let mut c = None;
@@ -317,10 +320,10 @@ fn choose_column<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize>
 }
 
 fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, solution: &mut Vec<usize>) -> Option<Vec<usize>>
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     if let Some(column) = choose_column(table) {
         table.cover(column);
 
@@ -364,20 +367,21 @@ struct LevelState {
     row_node: usize
 }
 
-pub struct DLXIter<P, S, C> where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+pub struct DLXCIter<P, S, C> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     table: DLXCTable<P, S, C>,
     stack: Vec<LevelState>,
     state: State
 }
 
-impl<P, S, C> DLXIter<P, S, C>
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+impl<P, S, C> DLXCIter<P, S, C>
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
         let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let mut stack = Vec::new();
@@ -391,7 +395,7 @@ impl<P, S, C> DLXIter<P, S, C>
             table.cover(column);
         }
 
-        DLXIter { table, stack, state }
+        DLXCIter { table, stack, state }
     }
 
     fn cover_column(&mut self, column: usize) {
@@ -435,10 +439,11 @@ impl<P, S, C> DLXIter<P, S, C>
     }
 }
 
-impl<P, S, C> Iterator for DLXIter<P, S, C> where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
+impl<P, S, C> Iterator for DLXCIter<P, S, C> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     type Item = Vec<Vec<Item<P, S, C>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -478,23 +483,44 @@ impl<P, S, C> Iterator for DLXIter<P, S, C> where
     }
 }
 
-pub fn dlx_iter<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> DLXIter<P, S, C>
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
-    DLXIter::new(sets, primary_items, secondary_items, colors)
+pub fn dlxc_iter<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> DLXCIter<P, S, C>
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
+    DLXCIter::new(sets, primary_items, secondary_items, colors)
 }
 
-pub fn dlx_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Option<Vec<Vec<Item<P, S, C>>>>
-    where 
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug  {
+pub fn dlxc_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
+                          secondary_items: Vec<S>, colors: Vec<C>) -> Option<Vec<Vec<Item<P, S, C>>>>
+where 
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
     let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
     search(&mut table, &mut Vec::new())
         .map(|solution| solution
             .into_iter()
             .map(|node_index| table.get_row(node_index))
             .collect())
+}
+
+pub fn dlxc_first_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
+                              secondary_items: Vec<S>, colors: Vec<C>, 
+                              thread_count: usize) -> Option<Vec<Vec<Item<P, S, C>>>> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {   
+    todo!()
+}
+
+pub fn dlxc_iter_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
+                             secondary_items: Vec<S>, colors: Vec<C>, 
+                             thread_count: usize) -> DLXCIter<P, S, C> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {   
+    todo!()
 }

@@ -3,7 +3,7 @@ pub use dfs::*;
 
 mod dlx {
 
-    use libdlx::*;
+    use libdlx::dlx::*;
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
     pub enum Position {

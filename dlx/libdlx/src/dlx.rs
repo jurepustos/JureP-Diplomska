@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::mem::take;
 
 
@@ -343,7 +344,8 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     }
 }
 
-fn choose_column<T: Eq + Copy + std::fmt::Debug>(table: &DLXTable<T>) -> Option<usize> {
+fn choose_column<T>(table: &DLXTable<T>) -> Option<usize> 
+where T: Eq + Copy + std::fmt::Debug {
     let mut j = table.right_links[0];
     let mut s = usize::MAX;
     let mut c = None;
@@ -512,7 +514,7 @@ pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items
 }
 
 pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Option<Vec<Vec<T>>>
-    where T: Eq + Copy + std::fmt::Debug {
+where T: Eq + Copy + std::fmt::Debug {
 
     let mut table = DLXTable::new(sets, primary_items, secondary_items);
     search(&mut table, &mut Vec::new())
@@ -520,4 +522,16 @@ pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: V
             .into_iter()
             .map(|node_index| table.get_row(node_index))
             .collect())
+}
+
+pub fn dlx_first_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                       secondary_items: Vec<T>, thread_count: usize) -> Option<Vec<Vec<T>>> 
+where T: Eq + Copy + std::fmt::Debug {   
+    todo!()
+}
+
+pub fn dlx_iter_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                      secondary_items: Vec<T>, thread_count: usize) -> DLXIter<T> 
+where T: Eq + Copy + std::fmt::Debug {   
+    todo!()
 }
