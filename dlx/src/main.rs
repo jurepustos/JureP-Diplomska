@@ -2,6 +2,7 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use crate::vertex_cover::vc_dlxc;
 use crate::sudoku::sudoku_dlx_first;
 use std::time::Instant;
 use std::thread::JoinHandle;
@@ -72,12 +73,12 @@ fn solve_queens_threaded() {
 } 
 
 fn solve_queens() {
-    for n in 30..100 {
+    for n in 1..100 {
         println!("n = {}", n);
 
         let now = Instant::now();
         if let Some(solution) = n_queens_dlx_first(n) {
-            // print_queens_solution(n, solution);
+            print_queens_solution(n, solution);
             println!("Took {} ms", now.elapsed().as_millis());
             println!();
         }
@@ -96,8 +97,14 @@ fn solve_sudoku(clues: &[Clue]) {
     }
 }
 
-fn main() {
-    // solve_sudoku(&[]);
-    solve_queens_threaded()
+fn solve_vertex_cover() {
+    let triangle_graph_edges = vec![(0, 1), (1, 2), (2, 0)];
+    let cover = vc_dlxc(&triangle_graph_edges, 2);
+    println!("solution: {:?}", cover);
 }
 
+fn main() {
+    // solve_sudoku(&[]);
+    // solve_queens_threaded();
+    solve_vertex_cover();
+}

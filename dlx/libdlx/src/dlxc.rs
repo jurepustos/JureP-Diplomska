@@ -28,38 +28,50 @@ C: Eq + Copy + std::fmt::Debug  {
     colors: Vec<usize>
 }
 
+fn has_name<P, S, C>(item: Item<P, S, C>, name: Option<Item<P, S, C>>) -> bool
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
+    match (name, item) {
+        (Some(Item::Primary(n)), Item::Primary(i)) => i == n,
+        (Some(Item::Secondary(n)), Item::Secondary(i)) => i == n,
+        (Some(Item::Secondary(n)), Item::ColoredSecondary(i, _)) => i == n,
+        _ => false
+    }
+}
 
-fn add_node<P, S, C>(table: &mut DLXCTable<P, S, C>, current_index: usize, item: Item<P, S, C>) 
+fn add_node<P, S, C>(table: &mut DLXCTable<P, S, C>, index: usize, item: Item<P, S, C>) 
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
     let header_index = table.names
         .iter()
-        .position(|name_opt| name_opt.is_some() && item == name_opt.unwrap())
+        .position(|&name| has_name(item, name))
         .unwrap();
     table.lengths[header_index] += 1;
     
     // node setup
-    table.up_links[current_index] = table.up_links[header_index];
-    table.down_links[current_index] = header_index;
-    table.header_links[current_index] = header_index;
+    table.up_links[index] = table.up_links[header_index];
+    table.down_links[index] = header_index;
+    table.header_links[index] = header_index;
 
     // uplink setup
-    table.down_links[table.up_links[current_index]] = current_index;
+    table.down_links[table.up_links[index]] = index;
     
     // header setup
     if table.down_links[header_index] == header_index {
-        table.down_links[header_index] = current_index;
+        table.down_links[header_index] = index;
     }
-    table.up_links[header_index] = current_index;
+    table.up_links[header_index] = index;
 
     if let Item::ColoredSecondary(_, c) = item {
         let color_index = table.color_names
             .iter()
             .position(|color| color.is_some() && c == color.unwrap())
             .unwrap();
-        table.colors[current_index] = table.colors[color_index];
+        table.colors[index] = color_index;
     }
 }
 
@@ -83,7 +95,8 @@ C: Eq + Copy + std::fmt::Debug {
         let names_count = names.len();
         
         
-        let mut color_names = vec![None; colors.len() + 1];
+        let mut color_names = Vec::with_capacity(colors.len() + 1);
+        color_names.push(None);
         for color in colors {
             color_names.push(Some(color));
         }
@@ -110,8 +123,16 @@ C: Eq + Copy + std::fmt::Debug {
 
         // header setup
         table.left_links[0] = names_count - 1;
-        table.right_links[0] = primary_count;
-        for i in 0..names_count - 1 {
+        for i in 0..primary_count {
+            table.left_links[i+1] = i;
+            table.right_links[i] = i+1;
+            table.up_links[i+1] = i+1;
+            table.down_links[i+1] = i+1;
+        }
+
+        table.up_links[primary_count + 1] = primary_count + 1;
+        table.down_links[primary_count + 1] = primary_count + 1;
+        for i in primary_count+1..names_count-1 {
             table.left_links[i+1] = i;
             table.right_links[i] = i+1;
             table.up_links[i+1] = i+1;
@@ -140,21 +161,23 @@ C: Eq + Copy + std::fmt::Debug {
     }
 
     fn commit(&mut self, row_node: usize) {
-        if self.colors[row_node] == 0 {
+        let color = self.colors[row_node];
+        if color == 0 {
             let header = self.header_links[row_node];
             self.cover(header);
         }
-        else {
+        else if color != usize::MAX {
             self.purify(row_node);
         }
     }
 
     fn uncommit(&mut self, row_node: usize) {
-        if self.colors[row_node] == 0 {
+        let color = self.colors[row_node];
+        if color == 0 {
             let header = self.header_links[row_node];
             self.uncover(header);
         }
-        else {
+        else if color != usize::MAX {
             self.unpurify(row_node);
         }
     }
@@ -231,6 +254,9 @@ C: Eq + Copy + std::fmt::Debug {
                     i += 1;
                 }
             }
+            else {
+                i += 1;
+            }
         }
     }
 
@@ -249,6 +275,9 @@ C: Eq + Copy + std::fmt::Debug {
     
                     i -= 1;
                 }
+            }
+            else {
+                i -= 1;
             }
         }
     }
@@ -281,8 +310,42 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
+    fn get_color(&self, row_node: usize) -> Option<C> {
+        let color_index = self.colors[row_node];
+        if color_index != usize::MAX {
+            self.color_names[color_index]
+        }
+        else {
+            let mut k = self.down_links[row_node];
+            let mut color = None;
+            while k != row_node && color == None {
+                let color_index = self.colors[row_node];
+                if color_index != 0 && color_index != usize::MAX {
+                    color = self.color_names[color_index]
+                }
+
+                k = self.down_links[k];
+            }
+
+            color
+        }
+    }
+
+    fn get_item(&self, row_node: usize) -> Item<P, S, C> {
+        match self.names[self.header_links[row_node]] {
+            Some(Item::Primary(item)) => Item::Primary(item),
+            Some(Item::Secondary(item)) => {
+                match self.get_color(row_node) {
+                    Some(color) => Item::ColoredSecondary(item, color), 
+                    None => Item::Secondary(item)
+                }
+            },
+            _ => panic!("None or ColoredSecondary access in headers. something went horribly wrong.")
+        }
+    }
+
     fn get_row(&self, row_node: usize) -> Vec<Item<P, S, C>> {
-        let mut row = vec![self.names[self.header_links[row_node]].unwrap()];
+        let mut row = vec![self.get_item(row_node)];
         let mut k = row_node + 1;
         while k != row_node {
             let header = self.header_links[k];
@@ -290,7 +353,7 @@ C: Eq + Copy + std::fmt::Debug {
                 k = self.up_links[k];
             }
             else {
-                let item = self.names[self.header_links[k]].unwrap();
+                let item = self.get_item(k);
                 row.push(item);
                 k += 1;
             }

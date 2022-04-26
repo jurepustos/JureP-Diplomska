@@ -13,149 +13,6 @@ pub struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
     header_links: Vec<usize>
 }
 
-struct ColumnIter<'a> {
-    down_links: &'a [usize],
-    column: usize,
-    index: usize
-}
-
-impl<'a> ColumnIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, column: usize) -> Self
-        where T: Eq + Copy + std::fmt::Debug {
-        ColumnIter { 
-            down_links: &table.down_links, 
-            column, 
-            index: column 
-        }
-    }
-} 
-
-impl<'a> Iterator for ColumnIter<'a> {    
-    type Item = usize;
-    fn next(&mut self) -> Option<Self::Item> {
-        let next_index = self.down_links[self.index];
-        if next_index != self.column {
-            self.index = next_index;
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-struct RevColumnIter<'a> {
-    up_links: &'a [usize],
-    column: usize,
-    index: usize
-}
-
-impl<'a> RevColumnIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, column: usize) -> Self
-        where T: Eq + Copy + std::fmt::Debug {
-        RevColumnIter { 
-            up_links: &table.down_links, 
-            column, 
-            index: column 
-        }
-    }
-} 
-
-impl<'a> Iterator for RevColumnIter<'a> {    
-    type Item = usize;
-    fn next(&mut self) -> Option<Self::Item> {
-        let next_index = self.up_links[self.index];
-        if next_index != self.column {
-            self.index = next_index;
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-struct RowIter<'a> {
-    header_links: &'a [usize],
-    up_links: &'a [usize],
-    row_node: usize,
-    index: usize
-}
-
-impl<'a> RowIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, row_node: usize) -> Self 
-        where T: Eq + Copy + std::fmt::Debug {
-        RowIter { 
-            header_links: &table.header_links, 
-            up_links: &table.up_links,
-            row_node, 
-            index: row_node 
-        }
-    }
-}
-
-impl<'a> Iterator for RowIter<'a> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let header = self.header_links[self.index];       
-        let next_index = 
-            if header == 0 {
-                self.up_links[self.index]
-            }
-            else {
-                self.index + 1
-            };
-        if next_index != self.row_node {
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-struct RevRowIter<'a> {
-    header_links: &'a [usize],
-    down_links: &'a [usize],
-    row_node: usize,
-    index: usize
-}
-
-impl<'a> RevRowIter<'a> {
-    fn new<T>(table: &'a DLXTable<T>, row_node: usize) -> Self 
-        where T: Eq + Copy + std::fmt::Debug{
-        RevRowIter { 
-            header_links: &table.header_links,
-            down_links: &table.down_links, 
-            row_node, 
-            index: row_node 
-        }
-    }
-}
-
-impl<'a> Iterator for RevRowIter<'a> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let header = self.header_links[self.index];       
-        let next_index = 
-            if header == 0 {
-                self.down_links[self.index]
-            }
-            else {
-                self.index - 1
-            };
-        if next_index != self.row_node {
-            Some(next_index)
-        }
-        else {
-            None
-        }
-    }
-}
-
-
 impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
         let primary_count = primary_items.len();
@@ -191,8 +48,16 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
 
         // header setup
         table.left_links[0] = names_count - 1;
-        table.right_links[0] = primary_count;
-        for i in 0..names_count - 1 {
+        for i in 0..primary_count {
+            table.left_links[i+1] = i;
+            table.right_links[i] = i+1;
+            table.up_links[i+1] = i+1;
+            table.down_links[i+1] = i+1;
+        }
+
+        table.up_links[primary_count + 1] = primary_count + 1;
+        table.down_links[primary_count + 1] = primary_count + 1;
+        for i in primary_count+1..names_count-1 {
             table.left_links[i+1] = i;
             table.right_links[i] = i+1;
             table.up_links[i+1] = i+1;
@@ -357,6 +222,7 @@ where T: Eq + Copy + std::fmt::Debug {
         j = table.right_links[j];
     }
 
+    // println!("{:?}", table.names[c.unwrap()]);
     c
 }
 

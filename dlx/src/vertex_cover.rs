@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::cmp::max;
 use libdlx::dlxc::*;
 
@@ -26,7 +27,7 @@ fn make_primaries(graph_edges: &Vec<(usize, usize)>, max_vertex: usize) -> Vec<P
     primaries
 }
 
-fn make_secondaries(max_vertex: usize, cover_size: usize) -> Vec<Secondary> {
+fn make_secondaries(max_vertex: usize) -> Vec<Secondary> {
     let mut secondaries = Vec::new();       
     for i in 0..=max_vertex {
         secondaries.push(Secondary::Vertex(i));
@@ -93,7 +94,7 @@ fn add_starting_sum_options(sets: &mut Vec<Vec<Item<Primary, Secondary, usize>>>
 
 fn add_sum_options(sets: &mut Vec<Vec<Item<Primary, Secondary, usize>>>, max_vertex: usize, cover_size: usize) {
     for i in 1..max_vertex {
-        for s in 0..=max(i+2, cover_size) {
+        for s in 0..min(i+2, cover_size) {
             sets.push(vec![
                 Item::Primary(Primary::SizeConstraint(i)),
                 Item::ColoredSecondary(Secondary::SumVar(i-1), s),
@@ -120,24 +121,23 @@ fn add_sum_options(sets: &mut Vec<Vec<Item<Primary, Secondary, usize>>>, max_ver
     }
 }
 
-pub fn vc_dlxc(graph_edges: Vec<(usize, usize)>, cover_size: usize) -> Option<Vec<usize>> {
+pub fn vc_dlxc(graph_edges: &Vec<(usize, usize)>, cover_size: usize) -> Option<Vec<usize>> {
     let max_vertex = graph_edges
         .iter()
         .map(|(a, b)| max(*a, *b))
         .max()
-        .unwrap_or(1);
+        .unwrap_or(2);
 
-    let primaries = make_primaries(&graph_edges, max_vertex);
-    let secondaries = make_secondaries(max_vertex, cover_size);
-    let sizes: Vec<usize> = (0..=max_vertex).into_iter().collect();
+    let primaries = make_primaries(graph_edges, max_vertex);
+    let secondaries = make_secondaries(max_vertex);
+    let sizes: Vec<usize> = (0..=max_vertex+1).into_iter().collect();
 
     let mut sets = Vec::new();
-    add_edge_options(&mut sets, &graph_edges);
+    add_edge_options(&mut sets, graph_edges);
     add_starting_sum_options(&mut sets);
     add_sum_options(&mut sets, max_vertex, cover_size);
 
-    let mut iter = dlxc_iter(sets, primaries, secondaries, sizes);
-    if let Some(result) = iter.next() {
+    if let Some(result) = dlxc_first(sets, primaries, secondaries, sizes) {
         let mut vertex_cover = Vec::new();
         for set in result {
             for item in set {
@@ -150,5 +150,5 @@ pub fn vc_dlxc(graph_edges: Vec<(usize, usize)>, cover_size: usize) -> Option<Ve
     }
     else {
         None
-    }    
+    }
 }
