@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::mem::take;
 
 
@@ -47,13 +46,15 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
         };
 
         // header setup
-        table.left_links[0] = names_count - 1;
+        table.left_links[0] = primary_count;
         for i in 0..primary_count {
             table.left_links[i+1] = i;
             table.right_links[i] = i+1;
             table.up_links[i+1] = i+1;
             table.down_links[i+1] = i+1;
         }
+
+        table.left_links[primary_count + 1] = names_count - 1;
 
         table.up_links[primary_count + 1] = primary_count + 1;
         table.down_links[primary_count + 1] = primary_count + 1;
@@ -63,6 +64,8 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
             table.up_links[i+1] = i+1;
             table.down_links[i+1] = i+1;
         }
+
+        table.right_links[names_count - 1] = primary_count + 1;
 
         let mut prev_spacer = names_count;
         
@@ -222,7 +225,6 @@ where T: Eq + Copy + std::fmt::Debug {
         j = table.right_links[j];
     }
 
-    // println!("{:?}", table.names[c.unwrap()]);
     c
 }
 
@@ -257,7 +259,6 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mu
 }
 
 #[derive(PartialEq,Eq,Clone,Copy,Debug)]
-
 enum State {
     CoveringColumn,
     CoveringRow,
@@ -278,6 +279,21 @@ pub struct DLXIter<T: Eq + Copy + std::fmt::Debug> {
 }
 
 impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
+    pub fn from_table(mut table: DLXTable<T>) -> Self {
+        let mut stack = Vec::new();
+        let state = State::CoveringRow;
+        if let Some(column) = choose_column(&table) {
+            let row_node = table.down_links[column];
+            stack.push(LevelState {
+                column,
+                row_node
+            });
+            table.cover(column);
+        }
+
+        DLXIter { table, stack, state }
+    }
+
     pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
         let mut table = DLXTable::new(sets, primary_items, secondary_items);
         let mut stack = Vec::new();
@@ -390,14 +406,154 @@ where T: Eq + Copy + std::fmt::Debug {
             .collect())
 }
 
-pub fn dlx_first_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
-                       secondary_items: Vec<T>, thread_count: usize) -> Option<Vec<Vec<T>>> 
-where T: Eq + Copy + std::fmt::Debug {   
-    todo!()
+pub use mp::{dlx_first_mp, dlx_iter_mp};
+
+mod mp {
+    use std::sync::mpsc::channel;
+    use std::mem::take;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    use crate::dlx::search;
+    use std::sync::mpsc::sync_channel;
+    use crate::dlx::DLXIter;
+    use std::thread::JoinHandle;
+    use std::thread::spawn;
+    use std::collections::VecDeque;
+    use crate::dlx::choose_column;
+    use crate::dlx::DLXTable;
+
+    struct RunLockStop();
+
+    fn search_mp<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>, 
+                                                 run_lock: &Arc<AtomicBool>) -> Result<Option<Vec<usize>>, RunLockStop> {
+        if run_lock.load(Ordering::SeqCst) == false {
+            // println!("run lock");
+            return Err(RunLockStop());
+        }
+
+        if let Some(column) = choose_column(table) {
+            table.cover(column);
+    
+            let mut row_node = table.down_links[column];
+            while row_node != column {
+                table.cover_row(row_node);
+    
+                // recursion
+                // go to the next level
+                solution.push(row_node);
+                let res = search_mp(table, solution, run_lock);
+                if let Ok(Some(sol)) = res {
+                    return Ok(Some(sol))
+                }
+                solution.pop();
+                
+                table.uncover_row(row_node);
+    
+                row_node = table.down_links[row_node];
+            }
+    
+            table.uncover(column);
+            Ok(None)
+        }
+        else {
+            Ok(Some(take(solution)))
+        }
+    }
+    
+
+    struct Task {
+        columns: Vec<usize>,
+        rows: Vec<usize>
+    }
+
+    struct TaskResult {
+        solution: Option<Vec<usize>>,
+        columns: Vec<usize>,
+        rows: Vec<usize>
+    }
+
+    pub fn dlx_first_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                           secondary_items: Vec<T>, thread_count: usize) -> Option<Vec<Vec<T>>> 
+    where T: 'static + Eq + Copy + Send + std::fmt::Debug {   
+        let mut table = DLXTable::new(sets, primary_items, secondary_items);
+        let mut queue = VecDeque::<Task>::new();
+        let mut running_tasks = Vec::new();
+        let run_lock = Arc::new(AtomicBool::new(true));
+        let (tx, rx) = channel();
+        if let Some(column) = choose_column(&table) {
+            table.cover(column);
+            let mut row_node = table.down_links[column];
+            while row_node != column {
+                queue.push_front(Task {
+                    columns: vec![column],
+                    rows: vec![row_node]
+                });
+
+                row_node = table.down_links[row_node];
+            }
+            table.uncover(column);
+        }
+
+        while let Some(task) = queue.pop_back() {
+            // println!("starting thread for {:?}, {:?}", task.columns, task.rows);
+            let columns = task.columns.clone();
+            let rows = task.rows.clone();
+            let mut thread_table = table.clone();
+            for i in 0..columns.len() {
+                thread_table.cover(columns[i]);
+                thread_table.cover_row(rows[i]);
+            }
+            let thread_tx = tx.clone();
+            let thread_run_lock = Arc::clone(&run_lock);
+            let thread = spawn(move || {
+                let search_res = search_mp(&mut thread_table, &mut Vec::new(), &thread_run_lock);
+                if let Ok(solution) = search_res {
+                    let _res = thread_tx.send(TaskResult {
+                        solution,
+                        columns,
+                        rows
+                    });
+                }
+            });
+
+            running_tasks.push(thread);
+        }
+
+        println!("number of threads: {}", running_tasks.len());
+        
+        let mut solution = Vec::new();
+        let mut threads_finished = 0;
+        while threads_finished < running_tasks.len() && solution.is_empty() {
+            if let Ok(mut task_result) = rx.recv() {
+                if let Some(mut sol) = task_result.solution {
+                    solution.append(&mut task_result.rows);
+                    solution.append(&mut sol);
+                    run_lock.store(false, Ordering::SeqCst);
+                }
+                threads_finished += 1;
+            }
+        }
+        
+        for thread in running_tasks {
+            let _res = thread.join();
+        }
+
+        if !solution.is_empty() {
+            Some(solution
+                .into_iter()
+                .map(|row_node| table.get_row(row_node))
+                .collect())
+        }
+        else {
+            None
+        }
+    }
+    
+    pub fn dlx_iter_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                          secondary_items: Vec<T>, thread_count: usize) -> Box<dyn Iterator<Item = Vec<Vec<T>>>>
+    where T: Eq + Copy + std::fmt::Debug {   
+        todo!()
+    }
 }
 
-pub fn dlx_iter_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
-                      secondary_items: Vec<T>, thread_count: usize) -> DLXIter<T> 
-where T: Eq + Copy + std::fmt::Debug {   
-    todo!()
-}

@@ -120,15 +120,17 @@ C: Eq + Copy + std::fmt::Debug {
             header_links: vec![0; node_count],
             colors: vec![0; node_count]
         };
-
+        
         // header setup
-        table.left_links[0] = names_count - 1;
+        table.left_links[0] = primary_count;
         for i in 0..primary_count {
             table.left_links[i+1] = i;
             table.right_links[i] = i+1;
             table.up_links[i+1] = i+1;
             table.down_links[i+1] = i+1;
         }
+
+        table.left_links[primary_count + 1] = names_count - 1;
 
         table.up_links[primary_count + 1] = primary_count + 1;
         table.down_links[primary_count + 1] = primary_count + 1;
@@ -138,6 +140,8 @@ C: Eq + Copy + std::fmt::Debug {
             table.up_links[i+1] = i+1;
             table.down_links[i+1] = i+1;
         }
+
+        table.right_links[names_count - 1] = primary_count + 1;
 
         let mut prev_spacer = names_count;
         

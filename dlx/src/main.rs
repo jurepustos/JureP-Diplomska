@@ -2,6 +2,7 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use crate::queens::n_queens_dlx_first_mp;
 use crate::vertex_cover::vc_dlxc;
 use crate::sudoku::sudoku_dlx_first;
 use std::time::Instant;
@@ -72,6 +73,22 @@ fn solve_queens_threaded() {
     }
 } 
 
+fn solve_queens_mp() {
+    for n in 1..100 {
+        println!("n = {}", n);
+
+        let now = Instant::now();
+        if let Some(solution) = n_queens_dlx_first_mp(n, 1) {
+            print_queens_solution(n, solution);
+            println!("Took {} ms", now.elapsed().as_millis());
+            println!();
+        }
+        else {
+            println!("No solution");
+        }
+    }
+}
+
 fn solve_queens() {
     for n in 1..100 {
         println!("n = {}", n);
@@ -81,6 +98,9 @@ fn solve_queens() {
             print_queens_solution(n, solution);
             println!("Took {} ms", now.elapsed().as_millis());
             println!();
+        }
+        else {
+            println!("No solution");
         }
         // for solution in n_queens_dlx_iter(n) {
         //     print_queens_solution(n, solution);
@@ -105,6 +125,6 @@ fn solve_vertex_cover() {
 
 fn main() {
     // solve_sudoku(&[]);
-    // solve_queens_threaded();
-    solve_vertex_cover();
+    solve_queens_mp();
+    // solve_vertex_cover();
 }
