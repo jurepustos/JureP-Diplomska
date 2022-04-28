@@ -85,11 +85,11 @@ mod dlx {
         solution.map(|sol| dlx_to_solution(&sol))
     }
 
-    pub fn n_queens_dlx_first_mp(n : usize, thread_count: usize) -> Option<Vec<(usize, usize)>> {
+    pub fn n_queens_dlx_first_mp(n: usize) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let solution = dlx_first_mp(problem_sets, primary_items, secondary_items, thread_count);
+        let solution = dlx_first_mp(problem_sets, primary_items, secondary_items);
 
         solution.map(|sol| dlx_to_solution(&sol))
     }

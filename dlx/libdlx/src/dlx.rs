@@ -406,7 +406,7 @@ where T: Eq + Copy + std::fmt::Debug {
             .collect())
 }
 
-pub use mp::{dlx_first_mp, dlx_iter_mp};
+pub use mp::*;
 
 mod mp {
     use std::sync::mpsc::SendError;
@@ -439,8 +439,8 @@ mod mp {
 
     type Solution = Vec<usize>;
 
-    fn search_mp<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>, 
-                                                 run_lock: &AtomicBool, channel: &Sender<Option<Solution>>) -> Result<Success, SendError<Option<Solution>>> {
+    fn search_mp<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>, run_lock: &AtomicBool, 
+                                                 channel: &SyncSender<Option<Solution>>) -> Result<Success, SendError<Option<Solution>>> {
         if run_lock.load(Ordering::Relaxed) == true {
             if let Some(column) = choose_column(table) {
                 table.cover(column);
@@ -493,7 +493,7 @@ mod mp {
         queue
     }
 
-    fn spawn_thread<T>(table: &DLXTable<T>, task: &Task, tx: &Sender<Option<Solution>>, 
+    fn spawn_thread<T>(table: &DLXTable<T>, task: &Task, tx: &SyncSender<Option<Solution>>, 
                        run_lock: &Arc<AtomicBool>) -> JoinHandle<()>
     where T: 'static + Eq + Copy + Send + std::fmt::Debug {
         let columns = task.columns.clone();
@@ -517,10 +517,10 @@ mod mp {
                     run_lock: &AtomicBool) -> Option<Vec<usize>> {
         let mut threads_finished = 0;
         while threads_finished < threads.len() {
-            if let Ok(solution) = rx.recv() {
-                if let Some(sol) = solution {
+            if let Ok(result) = rx.recv() {
+                if let Some(solution) = result {
                     run_lock.store(false, Ordering::Relaxed);
-                    return Some(sol)
+                    return Some(solution)
                 }
                 else {
                     threads_finished += 1;
@@ -528,14 +528,66 @@ mod mp {
             }
         }
         None
-    } 
+    }
 
-    pub fn dlx_first_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
-                           secondary_items: Vec<T>, thread_count: usize) -> Option<Vec<Vec<T>>> 
+    fn get_solution_bounded<T>(table: &DLXTable<T>, threads: &mut Vec<JoinHandle<()>>, queue: &mut VecDeque<Task>, 
+                               rx: &Receiver<Option<Solution>>, tx: &SyncSender<Option<Solution>>,
+                               run_lock: &Arc<AtomicBool>) -> Option<Vec<usize>>
+    where T: 'static + Eq + Copy + Send + std::fmt::Debug {
+        let mut threads_finished = 0;
+        while threads_finished < threads.len() {
+            if let Ok(result) = rx.recv() {
+                if let Some(solution) = result {
+                    run_lock.store(true, Ordering::Relaxed);
+                    return Some(solution)
+                }
+                else {
+                    if let Some(task) = queue.pop_back() {
+                        let thread = spawn_thread(&table, &task, &tx, &run_lock);
+                        threads.push(thread);
+                    }
+                }
+            }
+            threads_finished += 1;
+        }
+        None
+    }
+
+    pub fn dlx_first_mp_bounded<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                                   secondary_items: Vec<T>, thread_count: usize) -> Option<Vec<Vec<T>>> 
     where T: 'static + Eq + Copy + Send + std::fmt::Debug {   
         let table = DLXTable::new(sets, primary_items, secondary_items);
         let run_lock = Arc::new(AtomicBool::new(true));
-        let (tx, rx) = channel();
+        let (tx, rx) = sync_channel(1000);
+        
+        let mut threads = Vec::new();
+        let mut queue = get_tasks(&table);
+
+        while threads.len() < thread_count {
+            if let Some(task) = queue.pop_back() {
+                let thread = spawn_thread(&table, &task, &tx, &run_lock);
+                threads.push(thread);
+            }
+            else {
+                break;
+            }
+        }
+        
+        let solution = get_solution_bounded(&table, &mut threads, &mut queue, &rx, &tx, &run_lock);
+
+        solution
+            .map(|rows| rows
+                .into_iter()
+                .map(|row_node| table.get_row(row_node))
+                .collect())
+    }
+
+    pub fn dlx_first_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                           secondary_items: Vec<T>) -> Option<Vec<Vec<T>>> 
+    where T: 'static + Eq + Copy + Send + std::fmt::Debug {   
+        let table = DLXTable::new(sets, primary_items, secondary_items);
+        let run_lock = Arc::new(AtomicBool::new(true));
+        let (tx, rx) = sync_channel(1000);
         
         let mut threads = Vec::new();
         let mut queue = get_tasks(&table);
