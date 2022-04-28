@@ -2,8 +2,8 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
-use crate::queens::n_queens_dlx_first_mp;
 use crate::vertex_cover::vc_dlxc;
+use crate::queens::n_queens_dlx_first_mp;
 use crate::sudoku::sudoku_dlx_first;
 use std::time::Instant;
 use std::thread::JoinHandle;
@@ -74,11 +74,11 @@ fn solve_queens_threaded() {
 } 
 
 fn solve_queens_mp() {
-    for n in 1..100 {
+    for n in 1..1000 {
         println!("n = {}", n);
 
         let now = Instant::now();
-        if let Some(solution) = n_queens_dlx_first_mp(n, 1) {
+        if let Some(solution) = n_queens_dlx_first_mp(n, 15) {
             print_queens_solution(n, solution);
             println!("Took {} ms", now.elapsed().as_millis());
             println!();
@@ -118,8 +118,18 @@ fn solve_sudoku(clues: &[Clue]) {
 }
 
 fn solve_vertex_cover() {
-    let triangle_graph_edges = vec![(0, 1), (1, 2), (2, 0)];
+    let triangle_graph_edges = vec![(0,1), (1,2), (2,0)];
     let cover = vc_dlxc(&triangle_graph_edges, 2);
+    println!("solution: {:?}", cover);
+    let cover = vc_dlxc(&triangle_graph_edges, 5);
+    println!("solution: {:?}", cover);
+    
+    println!();
+
+    let star_graph_edges = vec![(0,1), (0,2), (0,3), (0,4)];
+    let cover = vc_dlxc(&star_graph_edges, 1);
+    println!("solution: {:?}", cover);
+    let cover = vc_dlxc(&star_graph_edges, 2);
     println!("solution: {:?}", cover);
 }
 

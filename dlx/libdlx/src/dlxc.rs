@@ -120,7 +120,7 @@ C: Eq + Copy + std::fmt::Debug {
             header_links: vec![0; node_count],
             colors: vec![0; node_count]
         };
-        
+
         // header setup
         table.left_links[0] = primary_count;
         for i in 0..primary_count {
@@ -320,18 +320,7 @@ C: Eq + Copy + std::fmt::Debug {
             self.color_names[color_index]
         }
         else {
-            let mut k = self.down_links[row_node];
-            let mut color = None;
-            while k != row_node && color == None {
-                let color_index = self.colors[row_node];
-                if color_index != 0 && color_index != usize::MAX {
-                    color = self.color_names[color_index]
-                }
-
-                k = self.down_links[k];
-            }
-
-            color
+            None
         }
     }
 
@@ -344,7 +333,7 @@ C: Eq + Copy + std::fmt::Debug {
                     None => Item::Secondary(item)
                 }
             },
-            _ => panic!("None or ColoredSecondary access in headers. something went horribly wrong.")
+            _ => panic!("None or ColoredSecondary access in headers. Something went horribly wrong.")
         }
     }
 

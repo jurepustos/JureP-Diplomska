@@ -409,8 +409,10 @@ where T: Eq + Copy + std::fmt::Debug {
 pub use mp::{dlx_first_mp, dlx_iter_mp};
 
 mod mp {
+    use std::sync::mpsc::SendError;
+    use std::sync::mpsc::SyncSender;
     use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
+    use std::sync::mpsc::Sender;
     use std::sync::mpsc::channel;
     use std::mem::take;
     use std::sync::atomic::AtomicBool;
@@ -425,53 +427,52 @@ use std::sync::mpsc::Sender;
     use crate::dlx::choose_column;
     use crate::dlx::DLXTable;
 
-    struct RunLockStop();
-
-    fn search_mp<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>, 
-                                                 run_lock: &AtomicBool) -> Result<Option<Vec<usize>>, RunLockStop> {
-        if run_lock.load(Ordering::Relaxed) == false {
-            // println!("run lock");
-            return Err(RunLockStop());
-        }
-
-        if let Some(column) = choose_column(table) {
-            table.cover(column);
-    
-            let mut row_node = table.down_links[column];
-            while row_node != column {
-                table.cover_row(row_node);
-    
-                // recursion
-                // go to the next level
-                solution.push(row_node);
-                let res = search_mp(table, solution, run_lock);
-                if let Ok(Some(sol)) = res {
-                    return Ok(Some(sol))
-                }
-                solution.pop();
-                
-                table.uncover_row(row_node);
-    
-                row_node = table.down_links[row_node];
-            }
-    
-            table.uncover(column);
-            Ok(None)
-        }
-        else {
-            Ok(Some(take(solution)))
-        }
+    enum Success {
+        Finished,
+        RunLockStop
     }
-    
 
     struct Task {
         columns: Vec<usize>,
         rows: Vec<usize>
     }
 
-    struct TaskResult {
-        solution: Option<Vec<usize>>,
-        preset_rows: Vec<usize>
+    type Solution = Vec<usize>;
+
+    fn search_mp<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>, 
+                                                 run_lock: &AtomicBool, channel: &Sender<Option<Solution>>) -> Result<Success, SendError<Option<Solution>>> {
+        if run_lock.load(Ordering::Relaxed) == true {
+            if let Some(column) = choose_column(table) {
+                table.cover(column);
+        
+                let mut row_node = table.down_links[column];
+                while row_node != column {
+                    table.cover_row(row_node);
+        
+                    // recursion
+                    // go to the next level
+                    solution.push(row_node);
+                    let search_res = search_mp(table, solution, run_lock, channel)?;
+                    if let Success::RunLockStop = search_res {
+                        return Ok(Success::RunLockStop)
+                    }
+                    solution.pop();
+                    
+                    table.uncover_row(row_node);
+        
+                    row_node = table.down_links[row_node];
+                }
+        
+                table.uncover(column);
+            }
+            else {
+                let _send_res = channel.send(Some(take(solution)));
+            }
+            Ok(Success::Finished)
+        }
+        else {
+            Ok(Success::RunLockStop)
+        }
     }
 
     fn get_tasks<T>(table: &DLXTable<T>) -> VecDeque<Task>
@@ -492,52 +493,34 @@ use std::sync::mpsc::Sender;
         queue
     }
 
-    fn spawn_thread<T>(table: &DLXTable<T>, task: &Task, tx: &Sender<TaskResult>, 
+    fn spawn_thread<T>(table: &DLXTable<T>, task: &Task, tx: &Sender<Option<Solution>>, 
                        run_lock: &Arc<AtomicBool>) -> JoinHandle<()>
     where T: 'static + Eq + Copy + Send + std::fmt::Debug {
         let columns = task.columns.clone();
-        let rows = task.rows.clone();
         let mut thread_table = table.clone();
         for i in 0..columns.len() {
-            thread_table.cover(columns[i]);
-            thread_table.cover_row(rows[i]);
+            thread_table.cover(task.columns[i]);
+            thread_table.cover_row(task.rows[i]);
         }
+        let mut rows = task.rows.clone();
         let thread_tx = tx.clone();
         let thread_run_lock = Arc::clone(run_lock);
         spawn(move || {
-            let search_res = search_mp(&mut thread_table, &mut Vec::new(), &thread_run_lock);
-            if let Ok(solution) = search_res {
-                let _res = thread_tx.send(TaskResult {
-                    solution,
-                    preset_rows: rows
-                });
+            let thread_res = search_mp(&mut thread_table, &mut rows, &thread_run_lock, &thread_tx);
+            if let Ok(Success::Finished) = thread_res {
+                let _send_res = thread_tx.send(None);
             }
         })
     }
 
-    fn spawn_threads<T>(table: &DLXTable<T>, queue: &mut VecDeque<Task>, 
-                        tx: &Sender<TaskResult>, run_lock: &Arc<AtomicBool>) -> Vec<JoinHandle<()>>
-    where T: 'static + Eq + Copy + Send + std::fmt::Debug {
-        let mut threads = Vec::new();
-        while let Some(task) = queue.pop_back() {
-            threads.push(spawn_thread(table, &task, &tx, run_lock));
-        }
-
-        threads
-    }
-
-    fn get_solution(threads: &Vec<JoinHandle<()>>, rx: &Receiver<TaskResult>, 
+    fn get_solution(threads: &Vec<JoinHandle<()>>, rx: &Receiver<Option<Solution>>, 
                     run_lock: &AtomicBool) -> Option<Vec<usize>> {
         let mut threads_finished = 0;
         while threads_finished < threads.len() {
-            if let Ok(mut task_result) = rx.recv() {
-                if let Some(mut sol) = task_result.solution {
+            if let Ok(solution) = rx.recv() {
+                if let Some(sol) = solution {
                     run_lock.store(false, Ordering::Relaxed);
-                    
-                    let mut rows = Vec::new();
-                    rows.append(&mut task_result.preset_rows);
-                    rows.append(&mut sol);
-                    return Some(rows)
+                    return Some(sol)
                 }
                 else {
                     threads_finished += 1;
@@ -545,7 +528,7 @@ use std::sync::mpsc::Sender;
             }
         }
         None
-    }
+    } 
 
     pub fn dlx_first_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
                            secondary_items: Vec<T>, thread_count: usize) -> Option<Vec<Vec<T>>> 
@@ -556,11 +539,12 @@ use std::sync::mpsc::Sender;
         
         let mut threads = Vec::new();
         let mut queue = get_tasks(&table);
+
         while let Some(task) = queue.pop_back() {
             let thread = spawn_thread(&table, &task, &tx, &run_lock);
             threads.push(thread);
         }
-
+        
         let solution = get_solution(&threads, &rx, &run_lock);
         
         println!("number of threads: {}", threads.len());
@@ -578,7 +562,7 @@ use std::sync::mpsc::Sender;
     
     pub fn dlx_iter_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
                           secondary_items: Vec<T>, thread_count: usize) -> Box<dyn Iterator<Item = Vec<Vec<T>>>>
-    where T: Eq + Copy + std::fmt::Debug {   
+    where T: 'static + Eq + Copy + Send + std::fmt::Debug {   
         todo!()
     }
 }
