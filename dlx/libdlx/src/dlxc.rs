@@ -474,12 +474,17 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    pub fn get_solution(&self) -> Vec<Vec<Item<P, S, C>>> {
-        self.stack
-            .iter()
-            .map(|level| level.row_node)
-            .map(|i| self.table.get_row(i))
-            .collect()
+    pub fn get_solution(&self) -> Option<Vec<Vec<Item<P, S, C>>>> {
+        if let State::FoundSolution = self.state {
+            Some(self.stack
+                .iter()
+                .map(|level| level.row_node)
+                .map(|i| self.table.get_row(i))
+                .collect())
+        }
+        else {
+            None
+        }
     }
 
     fn backtrack_row(&mut self) {
@@ -504,10 +509,10 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    type Item = State;
+    type Item = (State, Option<Vec<Vec<Item<P, S, C>>>>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.stack.is_empty() {
+        if !self.stack.is_empty() {
             match self.state {
                 State::FoundSolution => {
                     self.state = State::BacktrackingRow;
@@ -540,9 +545,11 @@ C: Eq + Copy + std::fmt::Debug {
                     self.state = State::BacktrackingRow;
                 },
             }
-            return Some(self.state)
+            Some((self.state, self.get_solution()))
         }
-        None
+        else {
+            None
+        }
     }
 }
 
@@ -571,7 +578,10 @@ C: Eq + Copy + std::fmt::Debug {
 pub use mp::*;
 
 mod mp {
-    use std::mem::take;
+    use std::mem::replace;
+use std::sync::mpsc::channel;
+use std::sync::mpsc::Sender;
+use std::mem::take;
     use crate::dlxc::LevelState;
     use crate::dlxc::DLXCIter;
     use std::sync::mpsc::Receiver;
@@ -616,8 +626,27 @@ mod mp {
         queue
     }
 
-    fn spawn_thread<P, S, C>(table: &DLXCTable<P, S, C>, task: &Task, tx: &SyncSender<Option<Solution<P, S, C>>>, 
-                             run_lock: &Arc<AtomicBool>) -> JoinHandle<()>
+    fn mp_task<P, S, C>(table: DLXCTable<P, S, C>, starting_stack: Vec<LevelState>, 
+                        tx: &SyncSender<Solution<P, S, C>>, run_lock: &AtomicBool)
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+        let mut iter = DLXCIter::from_table(table);
+        iter.stack = starting_stack;
+        while run_lock.load(Ordering::Relaxed) == true {
+            match iter.next() {
+                Some((State::FoundSolution, Some(solution))) => {
+                    let _res = tx.send(solution);
+                },
+                None => break,
+                _ => ()
+            }
+        }
+    }
+
+    fn spawn_thread<P, S, C>(table: &DLXCTable<P, S, C>, task: &Task, tx: &SyncSender<Solution<P, S, C>>, 
+                             join_tx: &Sender<usize>, thread_index: usize, run_lock: &Arc<AtomicBool>) -> JoinHandle<()>
     where
     P: 'static + Eq + Copy + std::fmt::Debug + Send,
     S: 'static + Eq + Copy + std::fmt::Debug + Send,
@@ -634,28 +663,17 @@ mod mp {
             thread_table.cover_row(task.rows[i]);
         }
         let thread_tx = tx.clone();
+        let thread_join_tx = join_tx.clone();
         let thread_run_lock = Arc::clone(run_lock);
         spawn(move || {
-            let mut iter = DLXCIter::from_table(thread_table);
-            iter.stack = starting_stack;
-            while thread_run_lock.load(Ordering::Relaxed) == true {
-                match iter.next() {
-                    Some(State::FoundSolution) => {
-                        let solution = iter.get_solution();
-                        let _res = thread_tx.send(Some(solution));
-                    },
-                    None => {
-                        let _res = thread_tx.send(None);
-                        break;
-                    },
-                    _ => ()
-                }
-            }
+            mp_task(thread_table, starting_stack, &thread_tx, &thread_run_lock);
+            let _res = thread_join_tx.send(thread_index);
         })
     }
 
-    fn get_solution<P, S, C>(table: &DLXCTable<P, S, C>, threads: &mut Vec<JoinHandle<()>>, queue: &mut VecDeque<Task>, 
-                             rx: &Receiver<Option<Solution<P, S, C>>>, tx: &SyncSender<Option<Solution<P, S, C>>>,
+    fn get_solution<P, S, C>(table: &DLXCTable<P, S, C>, threads: &mut Vec<Option<JoinHandle<()>>>, queue: &mut VecDeque<Task>, 
+                             tx: &SyncSender<Solution<P, S, C>>, rx: &Receiver<Solution<P, S, C>>,
+                             join_tx: &Sender<usize>, join_rx: &Receiver<usize>,
                              run_lock: &Arc<AtomicBool>) -> Option<Solution<P, S, C>>
     where
     P: 'static + Eq + Copy + std::fmt::Debug + Send,
@@ -663,18 +681,20 @@ mod mp {
     C: 'static + Eq + Copy + std::fmt::Debug + Send {
         let mut threads_finished = 0;
         while threads_finished < threads.len() {
-            if let Ok(result) = rx.recv() {
-                if let Some(solution) = result {
-                    run_lock.store(false, Ordering::Relaxed);
-                    return Some(solution)
+            if let Ok(solution) = rx.try_recv() {
+                run_lock.store(false, Ordering::Relaxed);
+                return Some(solution)
+            }
+
+            if let Ok(i) = join_rx.try_recv() {
+                if let Some(task) = queue.pop_back() {
+                    let thread = spawn_thread(&table, &task, &tx, &join_tx, threads.len(), &run_lock);
+                    threads.push(Some(thread));
                 }
-                else {
-                    if let Some(task) = queue.pop_back() {
-                        let thread = spawn_thread(&table, &task, &tx, &run_lock);
-                        threads.push(thread);
-                    }
-                    threads_finished += 1;
-                }
+
+                let thread = replace(&mut threads[i], None);
+                let _res = thread.unwrap().join();
+                threads_finished += 1;
             }
         }
         None
@@ -690,23 +710,28 @@ mod mp {
         let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let run_lock = Arc::new(AtomicBool::new(true));
         let (tx, rx) = sync_channel(1000);
+        let (join_tx, join_rx) = channel();
     
         let mut threads = Vec::new();
         let mut queue = get_tasks(&table);
     
         while threads.len() < thread_count {
             if let Some(task) = queue.pop_back() {
-                let thread = spawn_thread(&table, &task, &tx, &run_lock);
-                threads.push(thread);
+                let thread = spawn_thread(&table, &task, &tx, &join_tx, threads.len(), &run_lock);
+                threads.push(Some(thread));
             }
             else {
                 break;
             }   
         }
 
-        let result = get_solution(&table, &mut threads, &mut queue, &rx, &tx, &run_lock);
+        let result = get_solution(&table, &mut threads, &mut queue, &tx, &rx, &join_tx, &join_rx, &run_lock);
         
-        for thread in threads {
+        let running_threads = threads
+            .into_iter()
+            .filter(Option::is_some)
+            .map(Option::unwrap);
+        for thread in running_threads {
             let _res = thread.join();
         }
 
@@ -721,9 +746,11 @@ mod mp {
         table: DLXCTable<P, S, C>,
         run_lock: Arc<AtomicBool>,
         queue: VecDeque<Task>,
-        tx: SyncSender<Option<Solution<P, S, C>>>,
-        rx: Receiver<Option<Solution<P, S, C>>>,
-        threads: Vec<JoinHandle<()>>,
+        tx: SyncSender<Solution<P, S, C>>,
+        rx: Receiver<Solution<P, S, C>>,
+        join_tx: Sender<usize>,
+        join_rx: Receiver<usize>,
+        threads: Vec<Option<JoinHandle<()>>>,
         threads_finished: usize
     }
 
@@ -736,17 +763,19 @@ mod mp {
         type Item = Solution<P, S, C>;
         fn next(&mut self) -> Option<Self::Item> {
             while self.threads_finished < self.threads.len() {
-                if let Ok(result) = self.rx.recv() {
-                    if let Some(solution) = result {
-                        return Some(solution)
+                if let Ok(solution) = self.rx.try_recv() {
+                    return Some(solution)
+                }
+                
+                if let Ok(i) = self.join_rx.try_recv() {
+                    if let Some(task) = self.queue.pop_back() {
+                        let thread = spawn_thread(&self.table, &task, &self.tx, &self.join_tx, self.threads.len(), &self.run_lock);
+                        self.threads.push(Some(thread));
                     }
-                    else {
-                        if let Some(task) = self.queue.pop_back() {
-                            let thread = spawn_thread(&self.table, &task, &self.tx, &self.run_lock);
-                            self.threads.push(thread);
-                        }
-                        self.threads_finished += 1;
-                    }
+
+                    let thread = replace(&mut self.threads[i], None);
+                    let _res = thread.unwrap().join();
+                    self.threads_finished += 1;
                 }
             }
             None
@@ -761,7 +790,11 @@ mod mp {
         fn drop(&mut self) {
             self.run_lock.store(false, Ordering::Relaxed);
             let threads = take(&mut self.threads);
-            for thread in threads {
+            let running_threads = threads
+                .into_iter()
+                .filter(Option::is_some)
+                .map(Option::unwrap);
+            for thread in running_threads {
                 let _res = thread.join();
             }
         }
@@ -777,14 +810,15 @@ mod mp {
         let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let run_lock = Arc::new(AtomicBool::new(true));
         let (tx, rx) = sync_channel(1000);
+        let (join_tx, join_rx) = channel();
         
         let mut threads = Vec::new();
         let mut queue = get_tasks(&table);
 
         while threads.len() < thread_count {
             if let Some(task) = queue.pop_back() {
-                let thread = spawn_thread(&table, &task, &tx, &run_lock);
-                threads.push(thread);
+                let thread = spawn_thread(&table, &task, &tx, &join_tx, threads.len(), &run_lock);
+                threads.push(Some(thread));
             }
             else {
                 break;
@@ -796,6 +830,8 @@ mod mp {
             run_lock, 
             tx,
             rx, 
+            join_tx,
+            join_rx,
             queue,
             threads,
             threads_finished: 0

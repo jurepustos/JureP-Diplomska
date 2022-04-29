@@ -15,7 +15,7 @@ pub fn check_vertex_cover(graph_edges: &Vec<(usize, usize)>, cover: &BTreeSet<us
 
 mod dlx {
     use std::cmp::min;
-    use libdlx::dlxc::dlxc_first;
+    use libdlx::dlxc::*;
     use std::cmp::max;
     use libdlx::dlxc::Item;
     

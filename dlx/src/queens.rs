@@ -3,6 +3,10 @@ pub use dfs::*;
 
 mod dlx {
 
+    use crate::dlxc::dlxc_first;
+    use crate::dlxc::dlxc_first_mp;
+    use crate::dlxc::dlxc_iter;
+    use crate::dlxc::Item;
     use libdlx::dlx::*;
 
     #[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
@@ -13,15 +17,15 @@ mod dlx {
         UpDiagonal(usize)
     }
 
-    fn n_queens_problem(n: usize) -> Vec<Vec<Position>> {
+    fn n_queens_problem(n: usize) -> Vec<Vec<Item<Position, Position, ()>>> {
         let mut all_sets = Vec::new();
         for i in 0..n {
             for j in 0..n {
                 let set = vec![
-                    Position::Row(i),
-                    Position::Column(j),
-                    Position::UpDiagonal(i+j),
-                    Position::DownDiagonal(n+i-j)
+                    Item::Primary(Position::Row(i)),
+                    Item::Primary(Position::Column(j)),
+                    Item::Secondary(Position::UpDiagonal(i+j)),
+                    Item::Secondary(Position::DownDiagonal(n+i-j))
                 ];
                 all_sets.push(set);
             }
@@ -47,16 +51,16 @@ mod dlx {
         secondary_items
     }
 
-    pub fn dlx_to_solution(dlx_solution: &Vec<Vec<Position>>) -> Vec<(usize, usize)> {
+    pub fn dlx_to_solution(dlx_solution: &Vec<Vec<Item<Position, Position, ()>>>) -> Vec<(usize, usize)> {
         let mut solution = Vec::new();
         for option in dlx_solution {
             let mut row = 0;
             let mut column = 0;
             for position in option {
-                if let Position::Row(i) = position {
+                if let Item::Primary(Position::Row(i)) = position {
                     row = *i;
                 }
-                else if let Position::Column(j) = position {
+                else if let Item::Primary(Position::Column(j)) = position {
                     column = *j;
                 }
             }
@@ -71,16 +75,18 @@ mod dlx {
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
 
-        let iter = dlx_iter(problem_sets, primary_items, secondary_items)
-            .map(|sol| dlx_to_solution(&sol));
-        Box::new(iter)
+        // let iter = dlxc_iter(problem_sets, primary_items, secondary_items, Vec::new())
+        //     .map(|sol| dlx_to_solution(&sol));
+        // Box::new(iter)
+
+        todo!()
     }
 
     pub fn n_queens_dlx_first(n : usize) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let solution = dlx_first(problem_sets, primary_items, secondary_items);
+        let solution = dlxc_first(problem_sets, primary_items, secondary_items, Vec::new());
 
         solution.map(|sol| dlx_to_solution(&sol))
     }
@@ -89,7 +95,7 @@ mod dlx {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let solution = dlx_first_mp_bounded(problem_sets, primary_items, secondary_items, 15);
+        let solution = dlxc_first_mp(problem_sets, primary_items, secondary_items, Vec::new(), 15);
 
         solution.map(|sol| dlx_to_solution(&sol))
     }

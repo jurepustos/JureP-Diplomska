@@ -90,7 +90,7 @@ fn solve_queens_mp() {
 }
 
 fn solve_queens() {
-    for n in 80..100 {
+    for n in 1..100 {
         println!("n = {}", n);
 
         let now = Instant::now();
@@ -135,6 +135,6 @@ fn solve_vertex_cover() {
 
 fn main() {
     // solve_sudoku(&[]);
-    // solve_queens_mp();
-    solve_vertex_cover();
+    solve_queens_mp();
+    // solve_vertex_cover();
 }
