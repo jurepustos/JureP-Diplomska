@@ -615,6 +615,8 @@ mod mp {
     where T: 'static + Eq + Copy + Send + std::fmt::Debug {
         table: DLXTable<T>,
         run_lock: Arc<AtomicBool>,
+        queue: VecDeque<Task>,
+        tx: SyncSender<Option<Vec<usize>>>,
         rx: Receiver<Option<Vec<usize>>>,
         threads: Vec<JoinHandle<()>>,
         threads_finished: usize
@@ -633,6 +635,10 @@ mod mp {
                             .collect())
                     }
                     else {
+                        if let Some(task) = self.queue.pop_back() {
+                            let thread = spawn_thread(&self.table, &task, &self.tx, &self.run_lock);
+                            self.threads.push(thread);
+                        }
                         self.threads_finished += 1;
                     }
                 }
@@ -653,7 +659,7 @@ mod mp {
     }
     
     pub fn dlx_iter_mp<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
-                          secondary_items: Vec<T>) -> DLXIterMP<T>
+                          secondary_items: Vec<T>, thread_count: usize) -> DLXIterMP<T>
     where T: 'static + Eq + Copy + Send + std::fmt::Debug {   
         let table = DLXTable::new(sets, primary_items, secondary_items);
         let run_lock = Arc::new(AtomicBool::new(true));
@@ -662,15 +668,22 @@ mod mp {
         let mut threads = Vec::new();
         let mut queue = get_tasks(&table);
 
-        while let Some(task) = queue.pop_back() {
-            let thread = spawn_thread(&table, &task, &tx, &run_lock);
-            threads.push(thread);
+        while threads.len() < thread_count {
+            if let Some(task) = queue.pop_back() {
+                let thread = spawn_thread(&table, &task, &tx, &run_lock);
+                threads.push(thread);
+            }
+            else {
+                break;
+            }
         }
 
         DLXIterMP {
             table, 
             run_lock, 
+            tx,
             rx, 
+            queue,
             threads,
             threads_finished: 0
         }

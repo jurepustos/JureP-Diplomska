@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::mem::take;
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
@@ -410,11 +412,12 @@ C: Eq + Copy + std::fmt::Debug {
 }
 
 #[derive(PartialEq,Eq,Clone,Copy,Debug)]
-enum State {
+pub enum State {
     CoveringColumn,
     CoveringRow,
     BacktrackingColumn,
-    BacktrackingRow
+    BacktrackingRow,
+    FoundSolution,
 }
 
 #[derive(PartialEq,Eq,Clone,Copy,Debug)]
@@ -439,19 +442,20 @@ P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
     pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
-        let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
-        let mut stack = Vec::new();
-        let state = State::CoveringRow;
-        if let Some(column) = choose_column(&table) {
-            let row_node = table.down_links[column];
-            stack.push(LevelState {
-                column,
-                row_node
-            });
-            table.cover(column);
+        let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
+        DLXCIter { 
+            table,
+            stack: Vec::new(), 
+            state: State::CoveringColumn
         }
+    }
 
-        DLXCIter { table, stack, state }
+    pub fn from_table(table: DLXCTable<P, S, C>) -> Self {
+        DLXCIter { 
+            table,
+            stack: Vec::new(), 
+            state: State::CoveringColumn
+        }
     }
 
     fn cover_column(&mut self, column: usize) {
@@ -470,7 +474,7 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    fn get_solution(&self) -> Vec<Vec<Item<P, S, C>>> {
+    pub fn get_solution(&self) -> Vec<Vec<Item<P, S, C>>> {
         self.stack
             .iter()
             .map(|level| level.row_node)
@@ -500,11 +504,14 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    type Item = Vec<Vec<Item<P, S, C>>>;
+    type Item = State;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stack.is_empty() {
             match self.state {
+                State::FoundSolution => {
+                    self.state = State::BacktrackingRow;
+                },
                 State::CoveringColumn => {
                     if let Some(column) = choose_column(&self.table) {
                         // cover next column
@@ -512,8 +519,7 @@ C: Eq + Copy + std::fmt::Debug {
                     }
                     else {
                         // all columns are covered
-                        self.state = State::BacktrackingRow;
-                        return Some(self.get_solution())
+                        self.state = State::FoundSolution;
                     }
                 },
                 State::CoveringRow => {
@@ -534,6 +540,7 @@ C: Eq + Copy + std::fmt::Debug {
                     self.state = State::BacktrackingRow;
                 },
             }
+            return Some(self.state)
         }
         None
     }
@@ -561,22 +568,237 @@ C: Eq + Copy + std::fmt::Debug {
             .collect())
 }
 
-pub fn dlxc_first_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
-                              secondary_items: Vec<S>, colors: Vec<C>, 
-                              thread_count: usize) -> Option<Vec<Vec<Item<P, S, C>>>> 
-where
-P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {   
-    todo!()
-}
+pub use mp::*;
 
-pub fn dlxc_iter_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
-                             secondary_items: Vec<S>, colors: Vec<C>, 
-                             thread_count: usize) -> DLXCIter<P, S, C> 
-where
-P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {   
-    todo!()
+mod mp {
+    use std::mem::take;
+    use crate::dlxc::LevelState;
+    use crate::dlxc::DLXCIter;
+    use std::sync::mpsc::Receiver;
+    use crate::dlxc::Item;
+    use crate::dlxc::State;
+    use std::thread::spawn;
+    use std::sync::mpsc::SyncSender;
+    use std::thread::JoinHandle;
+    use std::sync::mpsc::sync_channel;
+    use crate::dlxc::choose_column;
+    use std::collections::VecDeque;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    use crate::dlxc::DLXCTable;
+
+    type Solution<P, S, C> = Vec<Vec<Item<P, S, C>>>;
+
+    struct Task {
+        columns: Vec<usize>,
+        rows: Vec<usize>
+    }
+    
+    fn get_tasks<P, S, C>(table: &DLXCTable<P, S, C>) -> VecDeque<Task>
+    where
+    P: Eq + Copy + std::fmt::Debug,
+    S: Eq + Copy + std::fmt::Debug,
+    C: Eq + Copy + std::fmt::Debug {
+        let mut queue = VecDeque::<Task>::new();
+        if let Some(column) = choose_column(table) {
+            let mut row_node = table.down_links[column];
+            while row_node != column {
+                queue.push_front(Task {
+                    columns: vec![column],
+                    rows: vec![row_node]
+                });
+
+                row_node = table.down_links[row_node];
+            }
+        }
+
+        queue
+    }
+
+    fn spawn_thread<P, S, C>(table: &DLXCTable<P, S, C>, task: &Task, tx: &SyncSender<Option<Solution<P, S, C>>>, 
+                             run_lock: &Arc<AtomicBool>) -> JoinHandle<()>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {
+        let mut thread_table = table.clone();
+        let mut starting_stack = Vec::new();
+        for i in 0..task.columns.len() {
+            starting_stack.push(LevelState {
+                column: task.columns[i],
+                row_node: task.rows[i]
+            });
+            
+            thread_table.cover(task.columns[i]);
+            thread_table.cover_row(task.rows[i]);
+        }
+        let thread_tx = tx.clone();
+        let thread_run_lock = Arc::clone(run_lock);
+        spawn(move || {
+            let mut iter = DLXCIter::from_table(thread_table);
+            iter.stack = starting_stack;
+            while thread_run_lock.load(Ordering::Relaxed) == true {
+                match iter.next() {
+                    Some(State::FoundSolution) => {
+                        let solution = iter.get_solution();
+                        let _res = thread_tx.send(Some(solution));
+                    },
+                    None => {
+                        let _res = thread_tx.send(None);
+                        break;
+                    },
+                    _ => ()
+                }
+            }
+        })
+    }
+
+    fn get_solution<P, S, C>(table: &DLXCTable<P, S, C>, threads: &mut Vec<JoinHandle<()>>, queue: &mut VecDeque<Task>, 
+                             rx: &Receiver<Option<Solution<P, S, C>>>, tx: &SyncSender<Option<Solution<P, S, C>>>,
+                             run_lock: &Arc<AtomicBool>) -> Option<Solution<P, S, C>>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {
+        let mut threads_finished = 0;
+        while threads_finished < threads.len() {
+            if let Ok(result) = rx.recv() {
+                if let Some(solution) = result {
+                    run_lock.store(false, Ordering::Relaxed);
+                    return Some(solution)
+                }
+                else {
+                    if let Some(task) = queue.pop_back() {
+                        let thread = spawn_thread(&table, &task, &tx, &run_lock);
+                        threads.push(thread);
+                    }
+                    threads_finished += 1;
+                }
+            }
+        }
+        None
+    }
+
+    pub fn dlxc_first_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
+                                  secondary_items: Vec<S>, colors: Vec<C>, 
+                                  thread_count: usize) -> Option<Vec<Vec<Item<P, S, C>>>> 
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {   
+        let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
+        let run_lock = Arc::new(AtomicBool::new(true));
+        let (tx, rx) = sync_channel(1000);
+    
+        let mut threads = Vec::new();
+        let mut queue = get_tasks(&table);
+    
+        while threads.len() < thread_count {
+            if let Some(task) = queue.pop_back() {
+                let thread = spawn_thread(&table, &task, &tx, &run_lock);
+                threads.push(thread);
+            }
+            else {
+                break;
+            }   
+        }
+
+        let result = get_solution(&table, &mut threads, &mut queue, &rx, &tx, &run_lock);
+        
+        for thread in threads {
+            let _res = thread.join();
+        }
+
+        result
+    }
+    
+    pub struct DLXCIterMP<P, S, C>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {
+        table: DLXCTable<P, S, C>,
+        run_lock: Arc<AtomicBool>,
+        queue: VecDeque<Task>,
+        tx: SyncSender<Option<Solution<P, S, C>>>,
+        rx: Receiver<Option<Solution<P, S, C>>>,
+        threads: Vec<JoinHandle<()>>,
+        threads_finished: usize
+    }
+
+    
+    impl<P, S, C> Iterator for DLXCIterMP<P, S, C>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {
+        type Item = Solution<P, S, C>;
+        fn next(&mut self) -> Option<Self::Item> {
+            while self.threads_finished < self.threads.len() {
+                if let Ok(result) = self.rx.recv() {
+                    if let Some(solution) = result {
+                        return Some(solution)
+                    }
+                    else {
+                        if let Some(task) = self.queue.pop_back() {
+                            let thread = spawn_thread(&self.table, &task, &self.tx, &self.run_lock);
+                            self.threads.push(thread);
+                        }
+                        self.threads_finished += 1;
+                    }
+                }
+            }
+            None
+        }
+    }
+
+    impl<P, S, C> Drop for DLXCIterMP<P, S, C>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {
+        fn drop(&mut self) {
+            self.run_lock.store(false, Ordering::Relaxed);
+            let threads = take(&mut self.threads);
+            for thread in threads {
+                let _res = thread.join();
+            }
+        }
+    }
+    
+    pub fn dlx_iter_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
+                                secondary_items: Vec<S>, colors: Vec<C>, 
+                                thread_count: usize) -> DLXCIterMP<P, S, C>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {   
+        let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
+        let run_lock = Arc::new(AtomicBool::new(true));
+        let (tx, rx) = sync_channel(1000);
+        
+        let mut threads = Vec::new();
+        let mut queue = get_tasks(&table);
+
+        while threads.len() < thread_count {
+            if let Some(task) = queue.pop_back() {
+                let thread = spawn_thread(&table, &task, &tx, &run_lock);
+                threads.push(thread);
+            }
+            else {
+                break;
+            }
+        }
+
+        DLXCIterMP {
+            table, 
+            run_lock, 
+            tx,
+            rx, 
+            queue,
+            threads,
+            threads_finished: 0
+        }
+    }
 }
