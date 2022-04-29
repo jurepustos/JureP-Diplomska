@@ -534,7 +534,7 @@ mod mp {
         while threads_finished < threads.len() {
             if let Ok(result) = rx.recv() {
                 if let Some(solution) = result {
-                    run_lock.store(true, Ordering::Relaxed);
+                    run_lock.store(false, Ordering::Relaxed);
                     return Some(solution)
                 }
                 else {
@@ -570,6 +570,10 @@ mod mp {
         }
         
         let result = get_solution_bounded(&table, &mut threads, &mut queue, &rx, &tx, &run_lock);
+
+        for thread in threads {
+            let _res = thread.join();
+        }
 
         result
             .map(|solution| solution
@@ -640,7 +644,7 @@ mod mp {
     impl<T> Drop for DLXIterMP<T>
     where T: 'static + Eq + Copy + Send + std::fmt::Debug {
         fn drop(&mut self) {
-            self.run_lock.store(true, Ordering::Relaxed);
+            self.run_lock.store(false, Ordering::Relaxed);
             let threads = take(&mut self.threads);
             for thread in threads {
                 let _res = thread.join();

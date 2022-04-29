@@ -78,7 +78,7 @@ fn solve_queens_mp() {
         println!("n = {}", n);
 
         let now = Instant::now();
-        if let Some(solution) = n_queens_dlx_first_mp(n) {
+        if let Some(solution) = n_queens_dlx_first_mp(n, 15) {
             print_queens_solution(n, solution);
             println!("Took {} ms", now.elapsed().as_millis());
             println!();
