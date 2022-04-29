@@ -75,11 +75,10 @@ mod dlx {
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
 
-        // let iter = dlxc_iter(problem_sets, primary_items, secondary_items, Vec::new())
-        //     .map(|sol| dlx_to_solution(&sol));
-        // Box::new(iter)
-
-        todo!()
+        let iter = dlxc_iter(problem_sets, primary_items, secondary_items, Vec::new())
+            .filter(|(_, sol)| sol.is_some())
+            .map(|(_, sol)| dlx_to_solution(&sol.unwrap()));
+        Box::new(iter)
     }
 
     pub fn n_queens_dlx_first(n : usize) -> Option<Vec<(usize, usize)>> {

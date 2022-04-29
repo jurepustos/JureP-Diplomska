@@ -443,19 +443,21 @@ S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
     pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
         let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
-        DLXCIter { 
-            table,
-            stack: Vec::new(), 
-            state: State::CoveringColumn
-        }
+        DLXCIter::from_table(table)
     }
 
-    pub fn from_table(table: DLXCTable<P, S, C>) -> Self {
-        DLXCIter { 
-            table,
-            stack: Vec::new(), 
-            state: State::CoveringColumn
+    pub fn from_table(mut table: DLXCTable<P, S, C>) -> Self {
+        let mut stack = Vec::new();
+        let state = State::CoveringRow;
+        if let Some(column) = choose_column(&table) {
+            let row_node = table.down_links[column];
+            stack.push(LevelState {
+                column,
+                row_node
+            });
+            table.cover(column);
         }
+        DLXCIter { table, stack, state }
     }
 
     fn cover_column(&mut self, column: usize) {
@@ -579,9 +581,9 @@ pub use mp::*;
 
 mod mp {
     use std::mem::replace;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::Sender;
-use std::mem::take;
+    use std::sync::mpsc::channel;
+    use std::sync::mpsc::Sender;
+    use std::mem::take;
     use crate::dlxc::LevelState;
     use crate::dlxc::DLXCIter;
     use std::sync::mpsc::Receiver;
@@ -754,7 +756,38 @@ use std::mem::take;
         threads_finished: usize
     }
 
-    
+    impl<P, S, C> DLXCIterMP<P, S, C>
+    where
+    P: 'static + Eq + Copy + std::fmt::Debug + Send,
+    S: 'static + Eq + Copy + std::fmt::Debug + Send,
+    C: 'static + Eq + Copy + std::fmt::Debug + Send {
+        pub fn stop(self) {
+            drop(self)
+        }
+
+        fn spawn_thread(&self, task: Task, thread_index: usize) -> JoinHandle<()> {
+            let mut thread_table = self.table.clone();
+            let mut starting_stack = Vec::new();
+            for i in 0..task.columns.len() {
+                starting_stack.push(LevelState {
+                    column: task.columns[i],
+                    row_node: task.rows[i]
+                });
+
+                thread_table.cover(task.columns[i]);
+                thread_table.cover_row(task.rows[i]);
+            }
+            
+            let thread_tx = self.tx.clone();
+            let thread_join_tx = self.join_tx.clone();
+            let thread_run_lock = Arc::clone(&self.run_lock);
+            spawn(move || {
+                mp_task(thread_table, starting_stack, &thread_tx, &thread_run_lock);
+                let _res = thread_join_tx.send(thread_index);
+            })
+        }
+    }
+
     impl<P, S, C> Iterator for DLXCIterMP<P, S, C>
     where
     P: 'static + Eq + Copy + std::fmt::Debug + Send,
@@ -769,7 +802,7 @@ use std::mem::take;
                 
                 if let Ok(i) = self.join_rx.try_recv() {
                     if let Some(task) = self.queue.pop_back() {
-                        let thread = spawn_thread(&self.table, &task, &self.tx, &self.join_tx, self.threads.len(), &self.run_lock);
+                        let thread = self.spawn_thread(task, self.threads.len());
                         self.threads.push(Some(thread));
                     }
 
@@ -800,7 +833,7 @@ use std::mem::take;
         }
     }
     
-    pub fn dlx_iter_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
+    pub fn dlxc_iter_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
                                 secondary_items: Vec<S>, colors: Vec<C>, 
                                 thread_count: usize) -> DLXCIterMP<P, S, C>
     where
