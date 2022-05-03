@@ -157,15 +157,21 @@ mod dlx {
     
         if let Some(result) = dlxc_first(sets, primaries, secondaries, sizes) {
             println!("{:?}", result);
-            let mut vertex_cover = Vec::new();
+            let mut vertex_cover = vec![false; max_vertex+1];
             for set in result {
                 for item in set {
                     if let Item::ColoredSecondary(Secondary::Vertex(i), 1) = item {
-                        vertex_cover.push(i);
+                        vertex_cover[i] = true;
                     }
                 }
             }
-            Some(vertex_cover)
+
+            Some(vertex_cover
+                .into_iter()
+                .enumerate()
+                .filter(|(_, selected)| *selected)
+                .map(|(i, _)| i)
+                .collect())
         }
         else {
             None

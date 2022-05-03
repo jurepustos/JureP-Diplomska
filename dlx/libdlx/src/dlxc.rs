@@ -27,7 +27,7 @@ C: Eq + Copy + std::fmt::Debug  {
     up_links: Vec<usize>,
     down_links: Vec<usize>,
     header_links: Vec<usize>,
-    colors: Vec<usize>
+    colors: Vec<usize>,
 }
 
 fn has_name<P, S, C>(item: Item<P, S, C>, name: Option<Item<P, S, C>>) -> bool
@@ -196,6 +196,7 @@ C: Eq + Copy + std::fmt::Debug {
         while i != header {
             if self.colors[i] == color {
                 self.colors[i] = usize::MAX;
+                self.colors[header] = color;
             }
             else {
                 self.hide(i);
@@ -213,6 +214,7 @@ C: Eq + Copy + std::fmt::Debug {
         while i != header {
             if self.colors[i] == usize::MAX {
                 self.colors[i] = color;
+                self.colors[header] = 0;
             }
             else {
                 self.unhide(i);
@@ -316,26 +318,19 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    fn get_color(&self, row_node: usize) -> Option<C> {
-        let color_index = self.colors[row_node];
-        if color_index != usize::MAX {
-            self.color_names[color_index]
-        }
-        else {
-            None
-        }
-    }
-
     fn get_item(&self, row_node: usize) -> Item<P, S, C> {
-        match self.names[self.header_links[row_node]] {
+        let header = self.header_links[row_node];
+        match self.names[header] {
             Some(Item::Primary(item)) => Item::Primary(item),
             Some(Item::Secondary(item)) => {
-                match self.get_color(row_node) {
-                    Some(color) => Item::ColoredSecondary(item, color), 
-                    None => Item::Secondary(item)
+                if let Some(color) = self.color_names[self.colors[header]] {
+                    Item::ColoredSecondary(item, color)
+                }
+                else {
+                    Item::Secondary(item)
                 }
             },
-            _ => panic!("None or ColoredSecondary access in headers. Something went horribly wrong.")
+            _ => panic!("None or ColoredSecondary in table headers. Something went horribly wrong.")
         }
     }
 
@@ -377,7 +372,7 @@ C: Eq + Copy + std::fmt::Debug {
     c
 }
 
-fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, solution: &mut Vec<usize>) -> Option<Vec<usize>>
+fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, solution: &mut Vec<usize>) -> Option<Vec<Vec<Item<P, S, C>>>>
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
@@ -397,6 +392,7 @@ C: Eq + Copy + std::fmt::Debug {
                 return Some(sol)
             }
             solution.pop();
+
             
             table.uncover_row(row_node);
 
@@ -407,7 +403,10 @@ C: Eq + Copy + std::fmt::Debug {
         None
     }
     else {
-        Some(take(solution))
+        Some(solution
+            .iter()
+            .map(|row_node| table.get_row(*row_node))
+            .collect())
     }
 }
 
@@ -571,10 +570,6 @@ S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
     let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
     search(&mut table, &mut Vec::new())
-        .map(|solution| solution
-            .into_iter()
-            .map(|node_index| table.get_row(node_index))
-            .collect())
 }
 
 pub use mp::*;

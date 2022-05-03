@@ -134,6 +134,6 @@ fn solve_vertex_cover() {
 
 fn main() {
     // solve_sudoku(&[]);
-    solve_queens();
-    // solve_vertex_cover();
+    // solve_queens();
+    solve_vertex_cover();
 }
