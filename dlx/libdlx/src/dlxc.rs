@@ -168,23 +168,25 @@ C: Eq + Copy + std::fmt::Debug {
 
     fn commit(&mut self, row_node: usize) {
         let color = self.colors[row_node];
+        let header = self.header_links[row_node];
         if color == 0 {
-            let header = self.header_links[row_node];
             self.cover(header);
         }
         else if color != usize::MAX {
             self.purify(row_node);
+            self.colors[header] = color;
         }
     }
 
     fn uncommit(&mut self, row_node: usize) {
         let color = self.colors[row_node];
+        let header = self.header_links[row_node];
         if color == 0 {
-            let header = self.header_links[row_node];
             self.uncover(header);
         }
         else if color != usize::MAX {
             self.unpurify(row_node);
+            self.colors[header] = 0;
         }
     }
 
@@ -196,7 +198,6 @@ C: Eq + Copy + std::fmt::Debug {
         while i != header {
             if self.colors[i] == color {
                 self.colors[i] = usize::MAX;
-                self.colors[header] = color;
             }
             else {
                 self.hide(i);
@@ -214,7 +215,6 @@ C: Eq + Copy + std::fmt::Debug {
         while i != header {
             if self.colors[i] == usize::MAX {
                 self.colors[i] = color;
-                self.colors[header] = 0;
             }
             else {
                 self.unhide(i);
@@ -351,6 +351,18 @@ C: Eq + Copy + std::fmt::Debug {
     
         row
     }
+
+    fn get_colors(&self) -> Vec<(S, Option<C>)> {
+        let mut assignments = Vec::new();
+        for (i, name) in self.names.iter().enumerate() {
+            if let Some(Item::Secondary(item)) = *name {
+                let color = self.color_names[self.colors[i]]; 
+                assignments.push((item, color));
+            }
+        }
+
+        assignments
+    }
 }
 
 fn choose_column<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize> 
@@ -372,7 +384,10 @@ C: Eq + Copy + std::fmt::Debug {
     c
 }
 
-fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, solution: &mut Vec<usize>) -> Option<Vec<Vec<Item<P, S, C>>>>
+type Solution<P, S, C> = (Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>);
+
+fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, partial_solution: &mut Vec<usize>) 
+                    -> Option<Solution<P, S, C>>
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
@@ -386,12 +401,12 @@ C: Eq + Copy + std::fmt::Debug {
 
             // recursion
             // go to the next level
-            solution.push(row_node);
-            let res = search(table, solution);
-            if let Some(sol) = res {
-                return Some(sol)
+            partial_solution.push(row_node);
+            let res = search(table, partial_solution);
+            if let Some((solution, colors)) = res {
+                return Some((solution, colors))
             }
-            solution.pop();
+            partial_solution.pop();
 
             
             table.uncover_row(row_node);
@@ -403,10 +418,12 @@ C: Eq + Copy + std::fmt::Debug {
         None
     }
     else {
-        Some(solution
+        let solution = partial_solution
             .iter()
             .map(|row_node| table.get_row(*row_node))
-            .collect())
+            .collect();
+        
+        Some((solution, table.get_colors()))
     }
 }
 
@@ -475,13 +492,14 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    pub fn get_solution(&self) -> Option<Vec<Vec<Item<P, S, C>>>> {
+    pub fn get_solution(&self) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)> {
         if let State::FoundSolution = self.state {
-            Some(self.stack
+            let solution = self.stack
                 .iter()
                 .map(|level| level.row_node)
                 .map(|i| self.table.get_row(i))
-                .collect())
+                .collect();
+            Some((solution, self.table.get_colors()))
         }
         else {
             None
@@ -510,7 +528,7 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    type Item = (State, Option<Vec<Vec<Item<P, S, C>>>>);
+    type Item = (State, Option<Solution<P, S, C>>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.stack.is_empty() {
@@ -562,8 +580,8 @@ C: Eq + Copy + std::fmt::Debug {
     DLXCIter::new(sets, primary_items, secondary_items, colors)
 }
 
-pub fn dlxc_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
-                          secondary_items: Vec<S>, colors: Vec<C>) -> Option<Vec<Vec<Item<P, S, C>>>>
+pub fn dlxc_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, 
+                           colors: Vec<C>) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)>
 where 
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
@@ -575,6 +593,7 @@ C: Eq + Copy + std::fmt::Debug {
 pub use mp::*;
 
 mod mp {
+    use crate::dlxc::Solution;
     use std::mem::replace;
     use std::sync::mpsc::channel;
     use std::sync::mpsc::Sender;
@@ -594,8 +613,6 @@ mod mp {
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
     use crate::dlxc::DLXCTable;
-
-    type Solution<P, S, C> = Vec<Vec<Item<P, S, C>>>;
 
     struct Task {
         columns: Vec<usize>,
@@ -633,8 +650,8 @@ mod mp {
         iter.stack = starting_stack;
         while run_lock.load(Ordering::Relaxed) == true {
             match iter.next() {
-                Some((State::FoundSolution, Some(solution))) => {
-                    let _res = tx.send(solution);
+                Some((State::FoundSolution, Some((solution, colors)))) => {
+                    let _res = tx.send((solution, colors));
                 },
                 None => break,
                 _ => ()
@@ -699,7 +716,7 @@ mod mp {
 
     pub fn dlxc_first_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
                                   secondary_items: Vec<S>, colors: Vec<C>, 
-                                  thread_count: usize) -> Option<Vec<Vec<Item<P, S, C>>>> 
+                                  thread_count: usize) -> Option<Solution<P, S, C>>
     where
     P: 'static + Eq + Copy + std::fmt::Debug + Send,
     S: 'static + Eq + Copy + std::fmt::Debug + Send,

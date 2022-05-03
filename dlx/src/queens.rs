@@ -77,7 +77,7 @@ mod dlx {
 
         let iter = dlxc_iter(problem_sets, primary_items, secondary_items, Vec::new())
             .filter(|(_, sol)| sol.is_some())
-            .map(|(_, sol)| dlx_to_solution(&sol.unwrap()));
+            .map(|(_, sol)| dlx_to_solution(&sol.unwrap().0));
         Box::new(iter)
     }
 
@@ -87,16 +87,16 @@ mod dlx {
         let secondary_items = make_secondary_items(n);
         let solution = dlxc_first(problem_sets, primary_items, secondary_items, Vec::new());
 
-        solution.map(|sol| dlx_to_solution(&sol))
+        solution.map(|(sol, _)| dlx_to_solution(&sol))
     }
 
     pub fn n_queens_dlx_first_mp(n: usize, thread_count: usize) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let solution = dlxc_first_mp(problem_sets, primary_items, secondary_items, Vec::new(), 15);
+        let solution = dlxc_first_mp(problem_sets, primary_items, secondary_items, Vec::new(), thread_count);
 
-        solution.map(|sol| dlx_to_solution(&sol))
+        solution.map(|(sol, _)| dlx_to_solution(&sol))
     }
 }
 
