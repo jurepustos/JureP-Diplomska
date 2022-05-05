@@ -93,19 +93,19 @@ fn solve_queens() {
     for n in 1..100 {
         println!("n = {}", n);
 
-        // let now = Instant::now();
-        // if let Some(solution) = n_queens_dlx_first(n) {
-        //     print_queens_solution(n, solution);
-        //     println!("Took {} ms", now.elapsed().as_millis());
-        //     println!();
-        // }
-        // else {
-        //     println!("No solution");
-        // }
-        for solution in n_queens_dlx_iter(n) {
+        let now = Instant::now();
+        if let Some(solution) = n_queens_dlx_first(n) {
             print_queens_solution(n, solution);
+            println!("Took {} ms", now.elapsed().as_millis());
             println!();
         }
+        else {
+            println!("No solution");
+        }
+        // for solution in n_queens_dlx_iter(n) {
+        //     print_queens_solution(n, solution);
+        //     println!();
+        // }
     }
 }
 
@@ -134,6 +134,6 @@ fn solve_vertex_cover() {
 
 fn main() {
     // solve_sudoku(&[]);
-    // solve_queens();
-    solve_vertex_cover();
+    solve_queens_mp();
+    // solve_vertex_cover();
 }

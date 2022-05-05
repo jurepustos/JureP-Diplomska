@@ -459,51 +459,48 @@ S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
     pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
         let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
-        DLXCIter::from_table(table)
+        let stack = Vec::new();
+        let state = State::CoveringColumn;
+        let mut this = DLXCIter { table, stack, state };
+        this.cover_column();
+        this
     }
 
-    pub fn from_table(mut table: DLXCTable<P, S, C>) -> Self {
-        let mut stack = Vec::new();
-        let state = State::CoveringRow;
-        if let Some(column) = choose_column(&table) {
-            let row_node = table.down_links[column];
-            stack.push(LevelState {
-                column,
-                row_node
-            });
-            table.cover(column);
-        }
-        DLXCIter { table, stack, state }
-    }
+    fn cover_column(&mut self) {
+        if let Some(column) = choose_column(&self.table) {
+            self.table.cover(column);
+            let row_node = self.table.down_links[column];
+            self.stack.push(LevelState { column, row_node });
 
-    fn cover_column(&mut self, column: usize) {
-        self.table.cover(column);
-        let row_node = self.table.down_links[column];
-        self.stack.push(LevelState { column, row_node });
-
-        if row_node == column {
-            // the column is empty
-            // set up to return to the previous level
-            self.state = State::BacktrackingColumn;
+            if row_node == column {
+                // the column is empty
+                // set up to return to the previous level
+                self.state = State::BacktrackingColumn;
+            }
+            else {
+                // cover the first row
+                self.state = State::CoveringRow;
+            }
         }
         else {
-            // cover the first row
-            self.state = State::CoveringRow;
+            // all columns are covered
+            self.state = State::FoundSolution;
         }
     }
 
-    pub fn get_solution(&self) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)> {
-        if let State::FoundSolution = self.state {
-            let solution = self.stack
-                .iter()
-                .map(|level| level.row_node)
-                .map(|i| self.table.get_row(i))
-                .collect();
-            Some((solution, self.table.get_colors()))
-        }
-        else {
-            None
-        }
+    fn cover_row(&mut self) {
+        // cover the current row and set up for the next level 
+        let level = self.stack.last().unwrap();
+        self.table.cover_row(level.row_node);
+        self.state = State::CoveringColumn;
+    }
+
+    fn backtrack_column(&mut self) {
+        // uncover the last covered column
+        // and set up to continue
+        let level = self.stack.pop().unwrap();
+        self.table.uncover(level.column);
+        self.state = State::BacktrackingRow;
     }
 
     fn backtrack_row(&mut self) {
@@ -519,6 +516,20 @@ C: Eq + Copy + std::fmt::Debug {
         else {
             // cover the next row
             self.state = State::CoveringRow;
+        }
+    }
+
+    pub fn get_solution(&self) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)> {
+        if let State::FoundSolution = self.state {
+            let solution = self.stack
+                .iter()
+                .map(|level| level.row_node)
+                .map(|i| self.table.get_row(i))
+                .collect();
+            Some((solution, self.table.get_colors()))
+        }
+        else {
+            None
         }
     }
 }
@@ -537,31 +548,16 @@ C: Eq + Copy + std::fmt::Debug {
                     self.state = State::BacktrackingRow;
                 },
                 State::CoveringColumn => {
-                    if let Some(column) = choose_column(&self.table) {
-                        // cover next column
-                        self.cover_column(column);
-                    }
-                    else {
-                        // all columns are covered
-                        self.state = State::FoundSolution;
-                    }
+                    self.cover_column();
                 },
                 State::CoveringRow => {
-                    // cover the current row and set up for the next level 
-                    let level = self.stack.last().unwrap();
-                    self.table.cover_row(level.row_node);
-                    self.state = State::CoveringColumn;
+                    self.cover_row();
                 },
                 State::BacktrackingRow => {
-                    // uncover the current row and set up to cover the next one
-                    self.backtrack_row()
+                    self.backtrack_row();
                 }
                 State::BacktrackingColumn => {
-                    // uncover the last covered column
-                    // and set up to continue
-                    let level = self.stack.pop().unwrap();
-                    self.table.uncover(level.column);
-                    self.state = State::BacktrackingRow;
+                    self.backtrack_column();
                 },
             }
             Some((self.state, self.get_solution()))
@@ -646,8 +642,11 @@ mod mp {
     P: Eq + Copy + std::fmt::Debug,
     S: Eq + Copy + std::fmt::Debug,
     C: Eq + Copy + std::fmt::Debug {
-        let mut iter = DLXCIter::from_table(table);
-        iter.stack = starting_stack;
+        let mut iter = DLXCIter {
+            table,
+            stack: starting_stack,
+            state: State::CoveringColumn
+        };
         while run_lock.load(Ordering::Relaxed) == true {
             match iter.next() {
                 Some((State::FoundSolution, Some((solution, colors)))) => {
