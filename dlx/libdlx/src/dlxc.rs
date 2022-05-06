@@ -615,7 +615,7 @@ mod mp {
         rows: Vec<usize>
     }
     
-    fn get_tasks<P, S, C>(table: &DLXCTable<P, S, C>) -> VecDeque<Task>
+    fn get_tasks<P, S, C>(table: &mut DLXCTable<P, S, C>, thread_count: usize) -> VecDeque<Task>
     where
     P: Eq + Copy + std::fmt::Debug,
     S: Eq + Copy + std::fmt::Debug,
@@ -631,8 +631,50 @@ mod mp {
 
                 row_node = table.down_links[row_node];
             }
-        }
 
+            while queue.len() < thread_count {
+                let task = queue.pop_back().unwrap();
+                for i in 0..task.columns.len() {
+                    let column = task.columns[i];
+                    let row_node = task.rows[i];
+                    table.cover(column);
+                    table.cover_row(row_node);
+                }
+
+                if let Some(column) = choose_column(table) {
+                    let mut columns = task.columns.clone();
+                    columns.push(column);
+                    let mut row_node = table.down_links[column];
+                    while row_node != column {
+                        let mut rows = task.rows.clone();
+                        rows.push(row_node);
+                        queue.push_front(Task { 
+                            columns: columns.clone(), 
+                            rows
+                        });
+
+                        row_node = table.down_links[row_node];
+                    }
+                }
+                else {
+                    for i in (0..task.columns.len()).into_iter().rev() {
+                        let column = task.columns[i];
+                        let row_node = task.rows[i];
+                        table.uncover_row(row_node);
+                        table.uncover(column);
+                    }
+                    queue.push_front(task);
+                    break;
+                }
+
+                for i in (0..task.columns.len()).into_iter().rev() {
+                    let column = task.columns[i];
+                    let row_node = task.rows[i];
+                    table.uncover_row(row_node);
+                    table.uncover(column);
+                }
+            }
+        }
         queue
     }
 
@@ -720,13 +762,13 @@ mod mp {
     P: 'static + Eq + Copy + std::fmt::Debug + Send,
     S: 'static + Eq + Copy + std::fmt::Debug + Send,
     C: 'static + Eq + Copy + std::fmt::Debug + Send {   
-        let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
+        let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let run_lock = Arc::new(AtomicBool::new(true));
         let (tx, rx) = sync_channel(1000);
         let (join_tx, join_rx) = channel();
     
         let mut threads = Vec::new();
-        let mut queue = get_tasks(&table);
+        let mut queue = get_tasks(&mut table, thread_count);
     
         while threads.len() < thread_count {
             if let Some(task) = queue.pop_back() {
@@ -851,13 +893,13 @@ mod mp {
     P: 'static + Eq + Copy + std::fmt::Debug + Send,
     S: 'static + Eq + Copy + std::fmt::Debug + Send,
     C: 'static + Eq + Copy + std::fmt::Debug + Send {   
-        let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
+        let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let run_lock = Arc::new(AtomicBool::new(true));
         let (tx, rx) = sync_channel(1000);
         let (join_tx, join_rx) = channel();
         
         let mut threads = Vec::new();
-        let mut queue = get_tasks(&table);
+        let mut queue = get_tasks(&mut table, thread_count);
 
         while threads.len() < thread_count {
             if let Some(task) = queue.pop_back() {

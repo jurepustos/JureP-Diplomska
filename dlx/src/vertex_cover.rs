@@ -155,7 +155,7 @@ mod dlx {
         add_edge_options(&mut sets, graph_edges);
         add_sum_options(&mut sets, max_vertex, cover_size);
     
-        if let Some((_, colors)) = dlxc_first(sets, primaries, secondaries, sizes) {
+        if let Some((_, colors)) = dlxc_first_mp(sets, primaries, secondaries, sizes, 11) {
             let mut vertex_cover = vec![false; max_vertex+1];
             for (item, color) in colors {
                 if let Secondary::Vertex(i) = item {

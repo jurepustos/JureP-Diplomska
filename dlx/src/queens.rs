@@ -3,7 +3,8 @@ pub use dfs::*;
 
 mod dlx {
 
-    use crate::dlxc::dlxc_first;
+    use crate::dlxc::dlxc_iter_mp;
+use crate::dlxc::dlxc_first;
     use crate::dlxc::dlxc_first_mp;
     use crate::dlxc::dlxc_iter;
     use crate::dlxc::Item;
@@ -88,6 +89,16 @@ mod dlx {
         let solution = dlxc_first(problem_sets, primary_items, secondary_items, Vec::new());
 
         solution.map(|(sol, _)| dlx_to_solution(&sol))
+    }
+
+    pub fn n_queens_dlx_iter_mp(n: usize, thread_count: usize) -> Box<dyn Iterator<Item = Vec<(usize, usize)>>> {
+        let problem_sets = n_queens_problem(n);
+        let primary_items = make_primary_items(n);
+        let secondary_items = make_secondary_items(n);
+
+        let iter = dlxc_iter_mp(problem_sets, primary_items, secondary_items, Vec::new(), thread_count)
+            .map(|sol| dlx_to_solution(&sol.0));
+        Box::new(iter)
     }
 
     pub fn n_queens_dlx_first_mp(n: usize, thread_count: usize) -> Option<Vec<(usize, usize)>> {

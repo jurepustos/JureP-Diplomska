@@ -2,6 +2,9 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use std::io::BufRead;
+use std::io::BufReader;
+use crate::queens::n_queens_dlx_iter_mp;
 use crate::vertex_cover::vc_dlxc;
 use crate::queens::n_queens_dlx_first_mp;
 use crate::sudoku::sudoku_dlx_first;
@@ -11,6 +14,8 @@ use std::thread::spawn;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
+use std::fs;
+use std::env;
 use crate::sudoku::Clue;
 use crate::sudoku::sudoku_dlx;
 use crate::queens::n_queens_dlx_iter;
@@ -77,14 +82,18 @@ fn solve_queens_mp() {
     for n in 1..1000 {
         println!("n = {}", n);
 
-        let now = Instant::now();
-        if let Some(solution) = n_queens_dlx_first_mp(n, 15) {
+        // let now = Instant::now();
+        // if let Some(solution) = n_queens_dlx_first_mp(n, 15) {
+        //     print_queens_solution(n, solution);
+        //     println!("Took {} ms", now.elapsed().as_millis());
+        //     println!();
+        // }
+        // else {
+        //     println!("No solution");
+        // }
+        for solution in n_queens_dlx_iter_mp(n, 15) {
             print_queens_solution(n, solution);
-            println!("Took {} ms", now.elapsed().as_millis());
             println!();
-        }
-        else {
-            println!("No solution");
         }
     }
 }
@@ -134,6 +143,37 @@ fn solve_vertex_cover() {
 
 fn main() {
     // solve_sudoku(&[]);
-    solve_queens_mp();
+    // solve_queens_mp();
     // solve_vertex_cover();
+
+    let args: Vec<String> = env::args().collect();
+    let filename = args.get(1).expect("Expected a filename as first argument.");
+    let file = fs::File::open(filename).expect("This file does not exist.");
+    let reader = BufReader::new(file);
+    let mut lines_iter = reader.lines().into_iter()
+        .map(|line| line.unwrap()
+            .to_owned()
+            .split(" ")
+            .map(|word| word.to_owned())
+            .collect::<Vec<_>>())
+        .map(|tokens| (tokens[0].clone(), tokens[1].clone()));
+
+    let (vc, ec) = lines_iter.next().unwrap();
+    let vertex_count = str::parse::<usize>(&vc[1..]).unwrap();
+    let edge_count = str::parse::<usize>(&ec).unwrap();
+
+    let mut edges = Vec::<(usize, usize)>::with_capacity(edge_count);
+    for (v1, v2) in lines_iter {
+        edges.push((str::parse(&v1).unwrap(), str::parse(&v2).unwrap()));
+    }
+
+    let cover = vertex_cover::vc_dlxc(&edges, vertex_count);
+    let upper_bound = cover.unwrap().len();
+
+    for i in (1..=upper_bound).into_iter().rev() {
+        println!("i = {}", i);
+        if let Some(cover) = vertex_cover::vc_dlxc(&edges, i) {
+            println!("{:?}", cover);
+        }
+    }
 }
