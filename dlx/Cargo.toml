@@ -12,3 +12,4 @@ authors = ["Jure Pustoslemšek <jp9483@student.uni-lj.si>"]
 libdlx = { path = "libdlx" }
 rand = "0.8.5"
 itertools = "0.10.3"
+maplit = "0.1.6"

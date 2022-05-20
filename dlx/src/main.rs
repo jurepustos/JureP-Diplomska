@@ -2,6 +2,8 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use std::iter::FromIterator;
+use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::BufReader;
 use crate::queens::n_queens_dlx_iter_mp;
@@ -22,6 +24,7 @@ use crate::queens::n_queens_dlx_iter;
 use crate::queens::n_queens_dlx_first;
 use crate::queens::n_queens_dfs;
 use libdlx::*;
+use maplit::*;
 
 fn print_queens_solution(n: usize, solution: Vec<(usize, usize)>) {
     let mut output = String::from("");
@@ -126,26 +129,35 @@ fn solve_sudoku(clues: &[Clue]) {
 }
 
 fn solve_vertex_cover() {
-    let triangle_graph_edges = vec![(0,1), (1,2), (2,0)];
+    let triangle_graph_edges = btreemap!{
+        0 => vec![1,2], 
+        1 => vec![0,2], 
+        2 => vec![0,1] 
+    };
     let cover = vc_dlxc(&triangle_graph_edges, 2);
     println!("solution: {:?}", cover);
-    let cover = vc_dlxc(&triangle_graph_edges, 5);
+    let cover = vc_dlxc(&triangle_graph_edges, 3);
     println!("solution: {:?}", cover);
     
     println!();
 
-    let star_graph_edges = vec![(0,1), (0,2), (0,3), (0,4)];
+    let star_graph_edges = btreemap!{
+        0 => vec![1,2,3,4], 
+        1 => vec![0], 
+        2 => vec![0], 
+        3 => vec![0], 
+        4 => vec![0]
+    };
     let cover = vc_dlxc(&star_graph_edges, 1);
     println!("solution: {:?}", cover);
     let cover = vc_dlxc(&star_graph_edges, 2);
     println!("solution: {:?}", cover);
+    let cover = vc_dlxc(&star_graph_edges, 4);
+    println!("solution: {:?}", cover);
 }
 
-fn main() {
-    // solve_sudoku(&[]);
-    // solve_queens_mp();
-    // solve_vertex_cover();
-
+fn solve_vc_dimacs() {
+    
     let args: Vec<String> = env::args().collect();
     let filename = args.get(1).expect("Expected a filename as first argument.");
     let file = fs::File::open(filename).expect("This file does not exist.");
@@ -167,13 +179,46 @@ fn main() {
         edges.push((str::parse(&v1).unwrap(), str::parse(&v2).unwrap()));
     }
 
-    let cover = vertex_cover::vc_dlxc(&edges, vertex_count);
-    let upper_bound = cover.unwrap().len();
+    let mut graph = BTreeMap::<usize, Vec<usize>>::new();
+    for (v1, v2) in edges {
+        if graph.contains_key(&v1) {
+            graph.get_mut(&v1).unwrap().push(v2);
+        }
+        else {
+            graph.insert(v1, vec![v2]);
+        }
 
-    for i in (1..=upper_bound).into_iter().rev() {
-        println!("i = {}", i);
-        if let Some(cover) = vertex_cover::vc_dlxc(&edges, i) {
-            println!("{:?}", cover);
+        if graph.contains_key(&v2) {
+            graph.get_mut(&v2).unwrap().push(v1);
+        }
+        else {
+            graph.insert(v2, vec![v1]);
         }
     }
+
+    let mut i = graph.len();
+    while i > 0 {
+        println!("i = {}", i);
+        if let Some(cover) = vertex_cover::vc_dlxc(&graph, i) {
+            println!("{:?}", cover);
+            i = cover.len() - 1;
+        }
+        else {
+            break
+        }
+    }
+
+    // for i in (1..=graph.len()).into_iter().rev() {
+    //     println!("i = {}", i);
+    //     if let Some(cover) = vertex_cover::vc_dlxc(&graph, i) {
+    //         println!("{:?}", cover);
+    //     }
+    // }
+}
+
+fn main() {
+    // solve_sudoku(&[]);
+    // solve_queens_mp();
+    // solve_vertex_cover();
+    solve_vc_dimacs();
 }

@@ -51,7 +51,7 @@ C: Eq + Copy + std::fmt::Debug {
     let header_index = table.names
         .iter()
         .position(|&name| has_name(item, name))
-        .unwrap();
+        .expect(&format!("{:?} not present", item));
     table.lengths[header_index] += 1;
     
     // node setup
@@ -257,7 +257,12 @@ C: Eq + Copy + std::fmt::Debug {
                 else {
                     self.up_links[self.down_links[i]] = self.up_links[i];
                     self.down_links[self.up_links[i]] = self.down_links[i];
-                    self.lengths[header] -= 1;
+                    if self.lengths[header] == 0 {
+                        panic!("underflowing header {:?}", self.names[header]);
+                    }
+                    else {
+                        self.lengths[header] -= 1;
+                    }
     
                     i += 1;
                 }
@@ -534,6 +539,62 @@ C: Eq + Copy + std::fmt::Debug {
     }
 }
 
+impl<P, S, C> DLXCIter<P, S, C> 
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
+    fn first_solution(&mut self) -> Option<Solution<P, S, C>> {
+        while !self.stack.is_empty() {
+            match self.state {
+                State::FoundSolution => {
+                    return self.get_solution()
+                },
+                State::CoveringColumn => {
+                    self.cover_column();
+                },
+                State::CoveringRow => {
+                    self.cover_row();
+                },
+                State::BacktrackingRow => {
+                    self.backtrack_row();
+                }
+                State::BacktrackingColumn => {
+                    self.backtrack_column();
+                },
+            }
+        }
+        None
+    }
+
+    fn all_solutions(&mut self) -> Vec<Solution<P, S, C>> {
+        let mut solutions = Vec::new();
+        while !self.stack.is_empty() {
+            match self.state {
+                State::FoundSolution => {
+                    self.state = State::BacktrackingRow;
+                    if let Some(solution) = self.get_solution() {
+                        solutions.push(solution)
+                    }
+                },
+                State::CoveringColumn => {
+                    self.cover_column();
+                },
+                State::CoveringRow => {
+                    self.cover_row();
+                },
+                State::BacktrackingRow => {
+                    self.backtrack_row();
+                }
+                State::BacktrackingColumn => {
+                    self.backtrack_column();
+                },
+            }
+        }
+        solutions
+    }
+}
+
 impl<P, S, C> Iterator for DLXCIter<P, S, C> 
 where
 P: Eq + Copy + std::fmt::Debug,
@@ -632,7 +693,7 @@ mod mp {
                 row_node = table.down_links[row_node];
             }
 
-            while queue.len() < thread_count {
+            while !queue.is_empty() && queue.len() < thread_count {
                 let task = queue.pop_back().unwrap();
                 for i in 0..task.columns.len() {
                     let column = task.columns[i];
