@@ -14,12 +14,16 @@ pub fn check_vertex_cover(graph_edges: &Vec<(usize, usize)>, cover: &BTreeSet<us
 }
 
 mod dlx {
+    use crate::dlxc::dlxc_iter;
+    use crate::min_cost_dlxc::min_cost_dlxc_first;
+    use crate::dlxc::dlxc_first;
+    // use libdlx::dlxc::Item;
+    use libdlx::min_cost_dlxc::Item;
+    use libdlx::min_cost_dlxc::min_cost_dlxc;
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
     use std::cmp::min;
-    use libdlx::dlxc::*;
     use std::cmp::max;
-    use libdlx::dlxc::Item;
     
     #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
     enum Primary {
@@ -41,9 +45,9 @@ mod dlx {
             }
         }
 
-        for i in 0..primaries.len()-1 {
-            primaries.push(Primary::SizeConstraint(i));
-        }
+        // for i in 0..primaries.len()-1 {
+        //     primaries.push(Primary::SizeConstraint(i));
+        // }
     
         primaries
     }
@@ -56,14 +60,14 @@ mod dlx {
             }
         }
     
-        for i in 0..graph.len()-1 {
-            secondaries.push(Secondary::SumVar(i));
-        }
+        // for i in 0..graph.len()-1 {
+        //     secondaries.push(Secondary::SumVar(i));
+        // }
     
         secondaries
     }
     
-    fn add_edge_options(sets: &mut Vec<Vec<Item<Primary, Secondary, usize>>>, graph: &BTreeMap<usize, Vec<usize>>, ignored: &BTreeSet<usize>, presets: &BTreeSet<usize>) {
+    fn add_edge_options(sets: &mut Vec<(Vec<Item<Primary, Secondary, usize>>, usize)>, graph: &BTreeMap<usize, Vec<usize>>, ignored: &BTreeSet<usize>, presets: &BTreeSet<usize>) {
         let mut preset_set = vec![];
         for a in presets {
             preset_set.push(Item::Primary(Primary::Vertex(*a)));
@@ -72,37 +76,40 @@ mod dlx {
             preset_set.push(Item::Primary(Primary::Vertex(*b)));
         }
         for a in presets {
-            if *a == 760 {
-                println!("1");
-            }
             preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*a), 1));
         }
         for b in ignored {
-            if *b == 760 {
-                println!("2");
-            }
             preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 0));
         }
-        sets.push(preset_set);
+        sets.push((preset_set, presets.len()));
 
         for (a, neighbors) in graph {
             if neighbors.len() > 0 {
                 if !ignored.contains(a) {
-                    sets.push(vec![
+                    sets.push((vec![
                         Item::Primary(Primary::Vertex(*a)),
                         Item::ColoredSecondary(Secondary::Vertex(*a), 1)
-                    ]);
+                    ], 1));
                 }
     
                 if !presets.contains(a) {
+                    // for b in neighbors {
+                    //     sets.push((vec![
+                    //         Item::Primary(Primary::Vertex(*a)),
+                    //         Item::ColoredSecondary(Secondary::Vertex(*a), 0),
+                    //         Item::ColoredSecondary(Secondary::Vertex(*b), 1),
+                    //     ], 0));
+                    // }
+                    
                     let mut exclude_set = vec![
                         Item::Primary(Primary::Vertex(*a)),
                         Item::ColoredSecondary(Secondary::Vertex(*a), 0)
                     ];
                     for b in neighbors {
+                        // exclude_set.push(Item::Primary(Primary::Vertex(*b)));
                         exclude_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 1));
                     }
-                    sets.push(exclude_set);
+                    sets.push((exclude_set, 0));
                 }
             }
         }
@@ -202,17 +209,23 @@ mod dlx {
         let secondaries = make_secondaries(graph);
         let sizes: Vec<usize> = (0..=graph.len()).into_iter().collect();
 
-        let (redundant_vertices, guaranteed_vertices) = degree_one_reduction(graph);
+        // let (redundant_vertices, guaranteed_vertices) = degree_one_reduction(graph);
+        let (redundant_vertices, guaranteed_vertices) = (BTreeSet::new(), BTreeSet::new());
         if guaranteed_vertices.len() > cover_size {
             return None
         }
 
         let mut sets = Vec::new();
         add_edge_options(&mut sets, graph, &redundant_vertices, &guaranteed_vertices);
-        add_sum_options(&mut sets, &graph, cover_size, &redundant_vertices, &guaranteed_vertices);
+        // add_sum_options(&mut sets, &graph, cover_size, &redundant_vertices, &guaranteed_vertices);
 
         // println!("{:?}", sets);
-        if let Some((_, colors)) = dlxc_first_mp(sets, primaries, secondaries, sizes, 11) {
+        // let sets = sets
+        //     .into_iter()
+        //     .map(|(set, _)| set)
+        //     .collect::<Vec<_>>();
+
+        if let Some((_, colors)) = min_cost_dlxc(sets, primaries, secondaries, sizes) {
             // println!("colors = {:?}", colors);
             let mut vertex_cover = BTreeSet::<usize>::new();
             for (item, color) in colors {

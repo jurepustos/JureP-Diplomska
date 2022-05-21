@@ -196,17 +196,21 @@ fn solve_vc_dimacs() {
         }
     }
 
-    let mut i = graph.len();
-    while i > 0 {
-        println!("i = {}", i);
-        if let Some(cover) = vertex_cover::vc_dlxc(&graph, i) {
-            println!("{:?}", cover);
-            i = cover.len() - 1;
-        }
-        else {
-            break
-        }
+    if let Some(cover) = vertex_cover::vc_dlxc(&graph, graph.len()) {
+        println!("{:?}, {:?}", cover.len(), cover);
     }
+
+    // let mut i = graph.len();
+    // while i > 0 {
+    //     println!("i = {}", i);
+    //     if let Some(cover) = vertex_cover::vc_dlxc(&graph, i) {
+    //         println!("{:?}", cover);
+    //         i = cover.len() - 1;
+    //     }
+    //     else {
+    //         break
+    //     }
+    // }
 
     // for i in (1..=graph.len()).into_iter().rev() {
     //     println!("i = {}", i);
