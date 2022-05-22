@@ -225,6 +225,9 @@ mod dlx {
         //     .map(|(set, _)| set)
         //     .collect::<Vec<_>>();
 
+        // let test = dlxc_iter(sets, primaries, secondaries, sizes).into_iter().collect::<Vec<_>>();
+        // None
+
         if let Some((_, colors)) = min_cost_dlxc(sets, primaries, secondaries, sizes) {
             // println!("colors = {:?}", colors);
             let mut vertex_cover = BTreeSet::<usize>::new();

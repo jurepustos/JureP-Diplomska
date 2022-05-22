@@ -464,7 +464,7 @@ C: Eq + Copy + std::fmt::Debug {
         if let Some(column) = choose_column(&self.table, hiding_threshold) {
             let row_node = self.table.down_links[column];
             let cost = self.table.costs[row_node];
-            if self.best_cost < self.current_cost + cost {
+            if self.best_cost <= self.current_cost + cost {
                 self.state = State::BacktrackingRow;
             }
             else {
@@ -505,11 +505,12 @@ C: Eq + Copy + std::fmt::Debug {
         // cover the current row and set up for the next level 
         let level = self.stack.last_mut().unwrap();
         let cost = self.table.costs[level.row_node];
-        if self.best_cost < self.current_cost + cost {
-            self.state = State::BacktrackingRow;
+        if self.best_cost <= self.current_cost + cost {
+            self.state = State::BacktrackingColumn;
         }
         else {
-            let threshold = self.best_cost - self.current_cost - cost;
+            let threshold = 
+                self.best_cost - self.current_cost - cost;
             level.covering_threshold = threshold;
             self.current_cost += cost;
             self.table.cover_row(level.row_node, threshold);
@@ -530,26 +531,21 @@ C: Eq + Copy + std::fmt::Debug {
         self.table.uncover_row(level.row_node, level.covering_threshold);
         self.current_cost -= self.table.costs[level.row_node];
         let row_node = self.table.down_links[level.row_node];
-        let cost = self.table.costs[row_node];
-        if self.best_cost < self.current_cost + cost {
+        level.row_node = row_node;
+        self.stack.push(level);
+        if level.row_node == level.column {
+            // we tried the last row
+            // set up to return to the previous level
             self.state = State::BacktrackingColumn;
         }
         else {
-            level.row_node = row_node;
-            self.stack.push(level);
-            if level.row_node == level.column {
-                // we tried the last row
-                // set up to return to the previous level
-                self.state = State::BacktrackingColumn;
-            }
-            else {
-                // cover the next row
-                self.state = State::CoveringRow;
-            }
+            // cover the next row
+            self.state = State::CoveringRow;
         }
     }
 
     pub fn get_solution(&self) -> (Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>) {
+        println!("printing solution");
         let solution = self.stack
             .iter()
             .map(|level| level.row_node)
@@ -633,7 +629,7 @@ C: Eq + Copy + std::fmt::Debug {
                     self.backtrack_column();
                 },
             }
-            // println!("stack: {:?}", self.stack);
+            // println!("stack: {:?}: {:?}", self.state, self.stack.last());
         }
         best_solution
     }
