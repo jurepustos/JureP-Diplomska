@@ -14,17 +14,24 @@ pub fn check_vertex_cover(graph_edges: &Vec<(usize, usize)>, cover: &BTreeSet<us
 }
 
 mod dlx {
+    use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
+    use std::collections::VecDeque;
     use crate::dlxc::dlxc_iter;
     use crate::min_cost_dlxc::min_cost_dlxc_first;
     use crate::dlxc::dlxc_first;
     // use libdlx::dlxc::Item;
     use libdlx::min_cost_dlxc::Item;
     use libdlx::min_cost_dlxc::min_cost_dlxc;
+    use libdlx::min_color_cost_dlxc::Color;
+    // use libdlx::min_color_cost_dlxc::Item;
+    use libdlx::min_color_cost_dlxc::min_color_cost_dlxc;
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
     use std::cmp::min;
     use std::cmp::max;
     
+    type Graph = BTreeMap<usize, BTreeSet<usize>>;
+
     #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
     enum Primary {
         Vertex(usize),
@@ -37,7 +44,30 @@ mod dlx {
         SumVar(usize)
     }
 
-    fn make_primaries(graph: &BTreeMap<usize, Vec<usize>>) -> Vec<Primary> {
+    #[derive(Clone,Copy,PartialEq,Eq,Debug)]
+    struct DegreeTwoFold {
+        vertex: usize,
+        neighbors: [usize; 2],
+        new_vertex: usize
+    }
+
+    #[derive(Clone,Copy,PartialEq,Eq,Debug)]
+    struct TwinFold {
+        twins: [usize; 2],
+        neighbors: [usize; 3],
+        new_vertex: usize
+    }
+
+    #[derive(Clone,PartialEq,Eq,Debug)]
+    struct Reductions {
+        exclusions: BTreeSet<usize>,
+        inclusions: BTreeSet<usize>,
+        degree_two_folds: Vec<DegreeTwoFold>,
+        twin_folds: Vec<TwinFold>,
+        next_vertex: usize
+    }
+
+    fn make_primaries(graph: &Graph) -> Vec<Primary> {
         let mut primaries = Vec::new();
         for (a, neighbors) in graph {
             if neighbors.len() > 0 {
@@ -52,7 +82,7 @@ mod dlx {
         primaries
     }
     
-    fn make_secondaries(graph: &BTreeMap<usize, Vec<usize>>) -> Vec<Secondary> {
+    fn make_secondaries(graph: &Graph) -> Vec<Secondary> {
         let mut secondaries = Vec::new();       
         for (i, neighbors) in graph {
             if neighbors.len() > 0 {
@@ -67,184 +97,397 @@ mod dlx {
         secondaries
     }
     
-    fn add_edge_options(sets: &mut Vec<(Vec<Item<Primary, Secondary, usize>>, usize)>, graph: &BTreeMap<usize, Vec<usize>>, ignored: &BTreeSet<usize>, presets: &BTreeSet<usize>) {
-        let mut preset_set = vec![];
-        for a in presets {
-            preset_set.push(Item::Primary(Primary::Vertex(*a)));
-        }
-        for b in ignored {
-            preset_set.push(Item::Primary(Primary::Vertex(*b)));
-        }
-        for a in presets {
-            preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*a), 1));
-        }
-        for b in ignored {
-            preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 0));
-        }
-        sets.push((preset_set, presets.len()));
+    fn add_edge_options(sets: &mut Vec<(Vec<Item<Primary, Secondary, usize>>, usize)>, graph: &Graph) {
+        // let mut preset_set = vec![];
+        // for a in &reductions.inclusions {
+        //     preset_set.push(Item::Primary(Primary::Vertex(*a)));
+        // }
+        // for b in &reductions.exclusions {
+        //     preset_set.push(Item::Primary(Primary::Vertex(*b)));
+        // }
+        // for a in &reductions.inclusions {
+        //     preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*a), 1));
+        // }
+        // for b in &reductions.exclusions {
+        //     preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 0));
+        // }
+        // sets.push((preset_set, reductions.inclusions.len()));
 
         for (a, neighbors) in graph {
             if neighbors.len() > 0 {
-                if !ignored.contains(a) {
-                    sets.push((vec![
-                        Item::Primary(Primary::Vertex(*a)),
-                        Item::ColoredSecondary(Secondary::Vertex(*a), 1)
-                    ], 1));
-                }
+                sets.push((vec![
+                    Item::Primary(Primary::Vertex(*a)),
+                    Item::ColoredSecondary(Secondary::Vertex(*a), 1)
+                ], 1));
     
-                if !presets.contains(a) {
-                    // for b in neighbors {
-                    //     sets.push((vec![
-                    //         Item::Primary(Primary::Vertex(*a)),
-                    //         Item::ColoredSecondary(Secondary::Vertex(*a), 0),
-                    //         Item::ColoredSecondary(Secondary::Vertex(*b), 1),
-                    //     ], 0));
-                    // }
-                    
-                    let mut exclude_set = vec![
-                        Item::Primary(Primary::Vertex(*a)),
-                        Item::ColoredSecondary(Secondary::Vertex(*a), 0)
-                    ];
-                    for b in neighbors {
-                        // exclude_set.push(Item::Primary(Primary::Vertex(*b)));
-                        exclude_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 1));
-                    }
-                    sets.push((exclude_set, 0));
-                }
-            }
-        }
-    }
-    
-    fn add_starting_sum_options(sets: &mut Vec<Vec<Item<Primary, Secondary, usize>>>, v0: usize, v1: usize) {
-        sets.push(vec![
-            Item::Primary(Primary::SizeConstraint(0)),
-            Item::ColoredSecondary(Secondary::Vertex(v0), 0),
-            Item::ColoredSecondary(Secondary::Vertex(v1), 1),
-            Item::ColoredSecondary(Secondary::SumVar(0), 1)
-        ]);
-
-        sets.push(vec![
-            Item::Primary(Primary::SizeConstraint(0)),
-            Item::ColoredSecondary(Secondary::Vertex(v0), 1),
-            Item::ColoredSecondary(Secondary::Vertex(v1), 0),
-            Item::ColoredSecondary(Secondary::SumVar(0), 1)
-        ]);
-        
-        sets.push(vec![
-            Item::Primary(Primary::SizeConstraint(0)),
-            Item::ColoredSecondary(Secondary::Vertex(v0), 0),
-            Item::ColoredSecondary(Secondary::Vertex(v1), 0),
-            Item::ColoredSecondary(Secondary::SumVar(0), 0)
-        ]);
-    
-        sets.push(vec![
-            Item::Primary(Primary::SizeConstraint(0)),
-            Item::ColoredSecondary(Secondary::Vertex(v0), 1),
-            Item::ColoredSecondary(Secondary::Vertex(v1), 1),
-            Item::ColoredSecondary(Secondary::SumVar(0), 2)
-        ]);
-    }
-    
-    fn add_sum_options(sets: &mut Vec<Vec<Item<Primary, Secondary, usize>>>, graph: &BTreeMap<usize, Vec<usize>>, 
-                       cover_size: usize, ignored: &BTreeSet<usize>, presets: &BTreeSet<usize>) {
-        let vertices: Vec<usize> = graph.keys().cloned().collect();
-        if vertices.len() < 2 {
-            return
-        }
-
-        add_starting_sum_options(sets, vertices[0], vertices[1]);
-
-        for i in 1..vertices.len()-1 {
-            for s in 0..min(i+2, cover_size) {
-                if !presets.contains(&vertices[i+1]) {
-                    sets.push(vec![
-                        Item::Primary(Primary::SizeConstraint(i)),
-                        Item::ColoredSecondary(Secondary::SumVar(i-1), s),
-                        Item::ColoredSecondary(Secondary::Vertex(vertices[i+1]), 0),
-                        Item::ColoredSecondary(Secondary::SumVar(i), s)
-                    ]);
-                }
-    
-                if !ignored.contains(&vertices[i+1]) {
-                    sets.push(vec![
-                        Item::Primary(Primary::SizeConstraint(i)),
-                        Item::ColoredSecondary(Secondary::SumVar(i-1), s),
-                        Item::ColoredSecondary(Secondary::Vertex(vertices[i+1]), 1),
-                        Item::ColoredSecondary(Secondary::SumVar(i), s+1)
-                    ]);
-                }
-            }
-    
-            if i+2 >= cover_size && !presets.contains(&vertices[i+1]) {
-                sets.push(vec![
-                    Item::Primary(Primary::SizeConstraint(i)),
-                    Item::ColoredSecondary(Secondary::SumVar(i-1), cover_size),
-                    Item::ColoredSecondary(Secondary::Vertex(vertices[i+1]), 0),
-                    Item::ColoredSecondary(Secondary::SumVar(i), cover_size)
-                ]);
-            }
-        }
-    }
-
-    fn degree_one_reduction(graph: &BTreeMap<usize, Vec<usize>>)  ->  (BTreeSet<usize>, BTreeSet<usize>) {
-        let mut redundant_vertices = BTreeSet::<usize>::new();
-        let mut guaranteed_vertices = BTreeSet::<usize>::new();
-        for (a, neighbors) in graph.iter() {
-            if neighbors.len() == 1 {
-                redundant_vertices.insert(*a);
-                
+                let mut exclude_set = vec![
+                    Item::Primary(Primary::Vertex(*a)),
+                    Item::ColoredSecondary(Secondary::Vertex(*a), 0)
+                ];
                 for b in neighbors {
-                    if !redundant_vertices.contains(b) {
-                        guaranteed_vertices.insert(*b);
-                    }
+                    // exclude_set.push(Item::Primary(Primary::Vertex(*b)));
+                    exclude_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 1));
+                }
+                sets.push((exclude_set, 0));  
+
+                // let mut exclude_set = vec![
+                //     Item::Primary(Primary::Vertex(*a)),
+                //     Item::ColoredSecondary(Secondary::Vertex(*a), 0)
+                // ];
+                // for b in neighbors {
+                //     exclude_set.push(Item::Primary(Primary::Vertex(*b)));
+                //     exclude_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 1));
+                // }
+                // sets.push((exclude_set, neighbors.len()));  
+            }
+        }
+    }
+
+    fn delete_vertex(graph: &mut Graph, vertex: usize) {
+        if let Some(neighbors) = graph.remove(&vertex) {
+            for n in neighbors {
+                let n_neighbors = graph.get_mut(&n).unwrap();
+                n_neighbors.remove(&vertex);
+                
+                if n_neighbors.is_empty() {
+                    graph.remove(&n);
                 }
             }
         }
-
-        (redundant_vertices, guaranteed_vertices)
     }
-    
-    pub fn vc_dlxc(graph: &BTreeMap<usize, Vec<usize>>, cover_size: usize) -> Option<Vec<usize>> {
-        let primaries = make_primaries(graph);
-        let secondaries = make_secondaries(graph);
-        let sizes: Vec<usize> = (0..=graph.len()).into_iter().collect();
 
-        // let (redundant_vertices, guaranteed_vertices) = degree_one_reduction(graph);
-        let (redundant_vertices, guaranteed_vertices) = (BTreeSet::new(), BTreeSet::new());
-        if guaranteed_vertices.len() > cover_size {
-            return None
+    fn degree_one_reduction(graph: &mut Graph, reductions: &mut Reductions) {
+        let vertices: Vec<usize> = graph.keys().cloned().collect();
+        for a in vertices {
+            if graph.contains_key(&a) && graph[&a].len() == 1 {
+                let b = graph[&a].iter().next().cloned().unwrap();
+                reductions.exclusions.insert(a);
+                reductions.inclusions.insert(b);
+                delete_vertex(graph, a);
+                delete_vertex(graph, b);
+            }
+        }
+    }
+
+    fn dominance_reduction(graph: &mut Graph, reductions: &mut Reductions) {
+        let vertices: Vec<usize> = graph.keys().cloned().collect();
+        for &a in &vertices {
+            for &b in vertices.iter().filter(|b| **b > a) {
+                let mut a_neighbors = graph[&a].clone();
+                a_neighbors.insert(a);
+
+                let mut b_neighbors = graph[&b].clone();
+                b_neighbors.insert(b);
+
+                if a_neighbors.is_superset(&b_neighbors) {
+                    reductions.inclusions.insert(a);
+                    delete_vertex(graph, a);
+                }
+            }
+        }
+    }
+
+    fn merge_vertices(graph: &mut Graph, vertices: &[usize], new_vertex: usize) {
+        let mut new_neighbors = BTreeSet::new();
+        for &v in vertices {
+            new_neighbors.append(&mut graph[&v].clone());
         }
 
+        for &v in vertices {
+            new_neighbors.remove(&v);
+        }
+
+        for &n in &new_neighbors {
+            let new_neighbors = graph.get_mut(&n).unwrap();
+            new_neighbors.insert(new_vertex);
+        }
+
+        for &v in vertices {
+            delete_vertex(graph, v);
+        }
+        
+        if !new_neighbors.is_empty() {
+            graph.insert(new_vertex, new_neighbors);
+        }
+    }
+
+    fn degree_two_reduction(graph: &mut Graph, reductions: &mut Reductions) {
+        let vertices: Vec<usize> = graph.keys().cloned().collect();
+        for a in vertices {
+            if graph.contains_key(&a) && graph[&a].len() == 2 {
+                let neighbor_list: Vec<usize> = graph[&a].iter().cloned().collect();
+                let v1 = neighbor_list[0];
+                let v2 = neighbor_list[1];
+                if !graph[&v1].contains(&v2) {
+                    reductions.degree_two_folds.push(DegreeTwoFold {
+                        vertex: a,
+                        neighbors: [v1, v2],
+                        new_vertex: reductions.next_vertex
+                    });
+
+                    merge_vertices(graph, &[a, v1, v2], reductions.next_vertex);
+                    reductions.next_vertex += 1;
+                }
+                else {
+                    reductions.exclusions.insert(a);
+                    reductions.inclusions.insert(v1);
+                    reductions.inclusions.insert(v2);
+                    delete_vertex(graph, a);
+                    delete_vertex(graph, v1);
+                    delete_vertex(graph, v2);
+                }
+            }
+        }
+    }
+
+    fn twin_reduction(graph: &mut Graph, reductions: &mut Reductions) {
+        let vertices: Vec<usize> = graph.keys().cloned().collect();
+        for a in vertices {
+            if graph.contains_key(&a) && graph[&a].len() == 3 {
+                let neighbor_list: Vec<usize> = graph[&a].iter().cloned().collect();
+                let v1 = neighbor_list[0];
+                let v2 = neighbor_list[1];
+                let v3 = neighbor_list[2];
+                let intersection = graph[&v1]
+                    .intersection(&graph[&v2])
+                    .cloned()
+                    .collect::<BTreeSet<usize>>()
+                    .intersection(&graph[&v3])
+                    .cloned()
+                    .collect::<BTreeSet<usize>>();
+                
+                if let Some(b) = intersection.into_iter().next() {
+                    if graph[&v1].contains(&v2) || graph[&v1].contains(&v3) || graph[&v2].contains(&v3) {
+                        reductions.exclusions.insert(a);
+                        reductions.exclusions.insert(b);
+                        reductions.inclusions.insert(v1);
+                        reductions.inclusions.insert(v2);
+                        reductions.inclusions.insert(v3);
+                        delete_vertex(graph, a);
+                        delete_vertex(graph, b);
+                        delete_vertex(graph, v1);
+                        delete_vertex(graph, v2);
+                        delete_vertex(graph, v3);
+                    }
+                    else {
+                        reductions.twin_folds.push(TwinFold {
+                            twins: [a, b],
+                            neighbors: [v1, v2, v3],
+                            new_vertex: reductions.next_vertex
+                        });
+
+                        let mut new_neighbors = graph[&v1].clone();
+                        new_neighbors.append(&mut graph[&v2].clone());
+                        new_neighbors.append(&mut graph[&v3].clone());
+
+                        merge_vertices(graph, &[a, b, v1, v2, v3], reductions.next_vertex);
+                        reductions.next_vertex += 1;
+                    }
+                }
+
+            }
+        }
+    }
+
+    fn unconfined_vertex(graph: &Graph, vertex: usize) -> bool {
+        let mut group = BTreeSet::new();
+        group.insert(vertex);
+
+        // the algorithm is guaranteed to return, in the absolute worst case when s has all vertices
+        loop {
+            let mut neighborhood = BTreeSet::<usize>::new();
+            for b in &group {
+                neighborhood.append(&mut graph[b].clone());
+            }
+    
+            let mut intersections = Vec::<BTreeSet<usize>>::new();
+            for b in &neighborhood {
+                let intersection: BTreeSet<usize> = graph.get(b)
+                    .unwrap_or(&BTreeSet::new())
+                    .intersection(&group)
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                
+                if intersection.len() == 1 {
+                    let diff = graph[b]
+                        .difference(&neighborhood)
+                        .into_iter()
+                        .cloned()
+                        .collect::<BTreeSet<usize>>()
+                        .difference(&group)
+                        .into_iter()
+                        .cloned()
+                        .collect();
+                    intersections.push(diff);
+                }
+            }
+    
+            if intersections.is_empty() {
+                return false
+            }
+    
+            let min_intersection = intersections
+                .into_iter()
+                .min_by(|set1, set2| set1.len().cmp(&set2.len()))
+                .unwrap_or(BTreeSet::new());
+    
+            if min_intersection.is_empty() {
+                return true
+            }
+            else if min_intersection.len() == 1 {
+                let vertex = min_intersection.into_iter().next().unwrap();
+                group.insert(vertex);
+            }
+            else {
+                return false
+            }
+        }
+    }
+    
+    fn unconfined_reduction(graph: &mut Graph, reductions: &mut Reductions) {
+        let vertices: Vec<usize> = graph.keys().cloned().collect();
+        for a in vertices {
+            if graph.contains_key(&a) && unconfined_vertex(graph, a) {
+                reductions.inclusions.insert(a);
+                delete_vertex(graph, a);
+            }
+        }
+    }
+
+    fn reduce_graph(graph: &mut Graph) -> Reductions {
+        let max_vertex = graph.keys().cloned().max().unwrap_or(0);
+        let mut reductions = Reductions {
+            exclusions: BTreeSet::new(),
+            inclusions: BTreeSet::new(),
+            degree_two_folds: Vec::new(),
+            twin_folds: Vec::new(),
+            next_vertex: max_vertex + 1
+        };
+
+        degree_one_reduction(graph, &mut reductions);
+        degree_two_reduction(graph, &mut reductions);
+        twin_reduction(graph, &mut reductions);
+        dominance_reduction(graph, &mut reductions);
+        unconfined_reduction(graph, &mut reductions);
+
+        reductions
+    }
+
+    fn get_unvisited_vertex(graph: &Graph, visited_vertices: &Vec<bool>) -> Option<usize> {
+        graph.keys()
+            .filter(|v| !visited_vertices[**v])
+            .next()
+            .cloned()
+    }
+
+    fn get_connected_components(graph: &Graph) -> Vec<Graph> {
+        let max_vertex = graph.keys().max().cloned().unwrap_or(0);
+        let mut visited_vertices = vec![false; max_vertex+1];
+        let mut components = Vec::new();
+
+        while let Some(first_vertex) = get_unvisited_vertex(graph, &visited_vertices) {
+            let mut queue = VecDeque::new();
+            let mut component = BTreeMap::new();
+
+            visited_vertices[first_vertex] = true;
+            component.insert(first_vertex, graph[&first_vertex].clone());
+            queue.push_front(first_vertex);
+            
+            while let Some(v) = queue.pop_back() {
+                for u in &graph[&v] {
+                    if !visited_vertices[*u] {
+                        visited_vertices[*u] = true;
+                        component.insert(*u, graph[u].clone());
+                        queue.push_front(*u);
+                    }
+                }
+            }
+    
+            components.push(component);
+        }
+
+        components
+    }
+
+    fn unfold_cover(cover: &mut BTreeSet<usize>, reductions: &Reductions) {
+        for fold in reductions.twin_folds.iter().rev() {
+            if cover.contains(&fold.new_vertex) {
+                cover.remove(&fold.new_vertex);
+                for n in fold.neighbors {
+                    cover.insert(n);
+                }
+            }
+            else {
+                cover.insert(fold.twins[0]);
+                cover.insert(fold.twins[1]);
+            }
+        }
+
+        for fold in reductions.degree_two_folds.iter().rev() {
+            if cover.contains(&fold.new_vertex) {
+                cover.remove(&fold.new_vertex);
+                for n in fold.neighbors {
+                    cover.insert(n);
+                }
+            }
+            else {
+                cover.insert(fold.vertex);
+            }
+        }
+    }
+
+    fn component_cover(mut graph: Graph) -> Option<Vec<usize>> {
+        let reductions = reduce_graph(&mut graph);
+        if graph.is_empty() {
+            let mut cover = reductions.inclusions.clone();
+            unfold_cover(&mut cover, &reductions);
+            return Some(cover.into_iter().collect());
+        }
+
+        let primaries = make_primaries(&graph);
+        let secondaries = make_secondaries(&graph);
+        let sizes: Vec<usize> = (0..=graph.len()).into_iter().collect();
+        
         let mut sets = Vec::new();
-        add_edge_options(&mut sets, graph, &redundant_vertices, &guaranteed_vertices);
-        // add_sum_options(&mut sets, &graph, cover_size, &redundant_vertices, &guaranteed_vertices);
+        add_edge_options(&mut sets, &graph);
 
-        // println!("{:?}", sets);
-        // let sets = sets
-        //     .into_iter()
-        //     .map(|(set, _)| set)
-        //     .collect::<Vec<_>>();
-
-        // let test = dlxc_iter(sets, primaries, secondaries, sizes).into_iter().collect::<Vec<_>>();
-        // None
-
-        if let Some((_, colors)) = min_cost_dlxc(sets, primaries, secondaries, sizes) {
-            // println!("colors = {:?}", colors);
-            let mut vertex_cover = BTreeSet::<usize>::new();
-            for (item, color) in colors {
+        let mut iter = min_cost_dlxc_iter(sets, primaries, secondaries, sizes);
+        let mut cover = BTreeSet::<usize>::new();
+        while let Some(solution) = iter.next() {
+            cover = reductions.inclusions.clone();
+            for (item, color) in solution.colors {
                 if let Secondary::Vertex(i) = item {
                     if let Some(1) = color {
-                        vertex_cover.insert(i);
+                        cover.insert(i);
                     }
                 }
             }
 
-            Some(vertex_cover
-                .into_iter()
-                .collect())
+            if cover.len() == reductions.inclusions.len() {
+                unfold_cover(&mut cover, &reductions);
+                return Some(cover.into_iter().collect())
+            }
+        }
+        
+        if !cover.is_empty() {
+            unfold_cover(&mut cover, &reductions);
+            Some(cover.into_iter().collect())
         }
         else {
             None
         }
+    }
+
+    pub fn vc_dlxc(graph: &Graph) -> Vec<usize> {
+        let mut full_cover = Vec::<usize>::new();
+        let components = get_connected_components(graph);
+        for component in components {
+            let cover = component_cover(component).unwrap();
+            for v in cover {
+                full_cover.push(v);
+            }
+        }
+        full_cover
     }
 }

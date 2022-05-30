@@ -1,37 +1,41 @@
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
-pub enum Item<P, S, C> 
+pub enum Item<P, S> 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug { 
+S: Eq + Copy + std::fmt::Debug { 
     Primary(P),
     Secondary(S),
-    ColoredSecondary(S, C),
+    ColoredSecondary(S, usize),
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+pub enum Color {
+    Unassigned,
+    Covered,
+    Assigned(usize)
 }
 
 #[derive(Clone,PartialEq,Eq,Debug)]
-pub struct DLXCTable<P, S, C> 
+pub struct DLXCTable<P, S> 
 where 
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug  {
-    names: Vec<Option<Item<P, S, C>>>,
-    color_names: Vec<Option<C>>,
+S: Eq + Copy + std::fmt::Debug {
+    names: Vec<Option<Item<P, S>>>,
     left_links: Vec<usize>,
     right_links: Vec<usize>,
     lengths: Vec<usize>,
     up_links: Vec<usize>,
     down_links: Vec<usize>,
     header_links: Vec<usize>,
-    colors: Vec<usize>,
+    colors: Vec<Color>,
+    row_indices: Vec<usize>,
     costs: Vec<usize>
 }
 
-fn has_name<P, S, C>(item: Item<P, S, C>, name: Option<Item<P, S, C>>) -> bool
+fn has_name<P, S>(item: Item<P, S>, name: Option<Item<P, S>>) -> bool
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
+S: Eq + Copy + std::fmt::Debug {
     match (name, item) {
         (Some(Item::Primary(n)), Item::Primary(i)) => i == n,
         (Some(Item::Secondary(n)), Item::Secondary(i)) => i == n,
@@ -40,11 +44,10 @@ C: Eq + Copy + std::fmt::Debug {
     }
 }
 
-fn add_node<P, S, C>(table: &mut DLXCTable<P, S, C>, index: usize, item: Item<P, S, C>, cost: usize) 
+fn add_node<P, S>(table: &mut DLXCTable<P, S>, index: usize, item: Item<P, S>, cost: usize, row_index: usize) 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
+S: Eq + Copy + std::fmt::Debug {
     let header_index = table.names
         .iter()
         .position(|&name| has_name(item, name))
@@ -66,23 +69,18 @@ C: Eq + Copy + std::fmt::Debug {
     table.up_links[header_index] = index;
 
     // cost setup
-    table.costs[index] = cost;
+    table.row_indices[index] = row_index;
 
-    if let Item::ColoredSecondary(_, c) = item {
-        let color_index = table.color_names
-            .iter()
-            .position(|color| color.is_some() && c == color.unwrap())
-            .unwrap();
-        table.colors[index] = color_index;
+    if let Item::ColoredSecondary(_, color) = item {
+        table.colors[index] = Color::Assigned(color);
     }
 }
 
-impl<P, S, C> DLXCTable<P, S, C> 
+impl<P, S> DLXCTable<P, S> 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    pub fn new(mut sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
+S: Eq + Copy + std::fmt::Debug {
+    pub fn new(sets: Vec<Vec<Item<P, S>>>, primary_items: Vec<P>, secondary_items: Vec<S>) -> Self {
         let primary_count = primary_items.len();
         let mut names = Vec::with_capacity(1 + primary_items.len() + secondary_items.len());
         names.push(None);
@@ -95,17 +93,9 @@ C: Eq + Copy + std::fmt::Debug {
         }
 
         let names_count = names.len();
-        
-        
-        let mut color_names = Vec::with_capacity(colors.len() + 1);
-        color_names.push(None);
-        for color in colors {
-            color_names.push(Some(color));
-        }
-
         let node_count = 1 + names_count + sets.len() + sets
             .iter()
-            .map(|(set, _)| set
+            .map(|set| set
                 .iter()
                 .map(|_| 1)
                 .sum::<usize>())
@@ -113,15 +103,15 @@ C: Eq + Copy + std::fmt::Debug {
 
         let mut table = DLXCTable {
             names,
-            color_names,
             left_links: vec![0; names_count],
             right_links: vec![0; names_count],
             lengths: vec![0; names_count],
             up_links: vec![0; node_count],
             down_links: vec![0; node_count],
             header_links: vec![0; node_count],
-            colors: vec![0; node_count],
-            costs: vec![0; node_count]
+            colors: vec![Color::Unassigned; node_count],
+            row_indices: vec![0; node_count],
+            costs: vec![0; sets.len()]
         };
 
         // header setup
@@ -149,11 +139,24 @@ C: Eq + Copy + std::fmt::Debug {
         let mut prev_spacer = names_count;
         
         let mut current_index = names_count + 1;
-        sets.sort_by(|(_, cost1), (_, cost2)| cost1.cmp(cost2));
-        for (set, cost) in sets {
+        let mut cost_sets = Vec::new();
+        for set in sets {
+            let mut cost = 0;
+            for item in &set {
+                match item {
+                    Item::ColoredSecondary(_, color) => cost += color,
+                    _ => ()
+                };
+            }
+            cost_sets.push((set, cost));
+        }
+        cost_sets.sort_by(|(_, cost1), (_, cost2)| cost1.cmp(cost2));
+
+        for (i, (set, cost)) in cost_sets.into_iter().enumerate() {
             if set.len() > 0 {
+                table.costs[i] = cost;
                 for item in set {
-                    add_node(&mut table, current_index, item, cost);
+                    add_node(&mut table, current_index, item, cost, i);
                     current_index += 1;
                 }
     
@@ -165,16 +168,18 @@ C: Eq + Copy + std::fmt::Debug {
             }
         }
 
+        println!("costs {:?}", table.costs);
+
         table
     }
 
     fn commit(&mut self, row_node: usize, threshold: usize) {
         let color = self.colors[row_node];
         let header = self.header_links[row_node];
-        if color == 0 {
+        if color == Color::Unassigned {
             self.cover(header, threshold);
         }
-        else if color != usize::MAX {
+        else if color != Color::Covered {
             self.purify(row_node, threshold);
             self.colors[header] = color;
         }
@@ -183,46 +188,61 @@ C: Eq + Copy + std::fmt::Debug {
     fn uncommit(&mut self, row_node: usize, threshold: usize) {
         let color = self.colors[row_node];
         let header = self.header_links[row_node];
-        if color == 0 {
+        if color == Color::Unassigned {
             self.uncover(header, threshold);
         }
-        else if color != usize::MAX {
+        else if color != Color::Covered {
             self.unpurify(row_node, threshold);
-            self.colors[header] = 0;
+            self.colors[header] = Color::Unassigned;
         }
     }
 
     fn purify(&mut self, row_node: usize, threshold: usize) {
-        let color = self.colors[row_node];
-        let header = self.header_links[row_node];
-        
-        let mut i = self.down_links[header];
-        while i != header && self.costs[i] < threshold {
-            if self.colors[i] == color {
-                self.colors[i] = usize::MAX;
+        // println!("purifying {:?}, {:?}, {:?}", row_node, self.names[self.header_links[row_node]], self.colors[row_node]);
+        if let Color::Assigned(color) = self.colors[row_node] {
+            let header = self.header_links[row_node];
+            
+            let mut i = self.down_links[header];
+            // println!("i = {}", i);
+            let mut cost = self.costs[self.row_indices[i]];
+            while i != header {
+                // println!("purifying cost of {:?}", self.row_indices[i]);
+                if cost + color < threshold {
+                    if self.colors[i] == Color::Assigned(color) {
+                        self.colors[i] = Color::Covered;
+                        self.costs[self.row_indices[i]] -= color;
+                    }
+                    else {
+                        self.hide(i);
+                    }
+                }
+    
+                i = self.down_links[i];
+                cost = self.costs[self.row_indices[i]];
             }
-            else {
-                self.hide(i);
-            }
-
-            i = self.down_links[i];
         }
     }
 
     fn unpurify(&mut self, row_node: usize, threshold: usize) {
-        let color = self.colors[row_node];
-        let header = self.header_links[row_node];
-        
-        let mut i = self.down_links[header];
-        while i != header && self.costs[i] < threshold {
-            if self.colors[i] == usize::MAX {
-                self.colors[i] = color;
+        if let Color::Assigned(color) = self.colors[row_node] {
+            let header = self.header_links[row_node];
+            
+            let mut i = self.down_links[header];
+            let mut cost = self.costs[self.row_indices[i]];
+            while i != header {
+                if cost + color < threshold {
+                    if self.colors[i] == Color::Covered {
+                        self.colors[i] = Color::Assigned(color);
+                        self.costs[self.row_indices[i]] += color;
+                    }
+                    else {
+                        self.unhide(i);
+                    }
+                }
+    
+                i = self.down_links[i];
+                cost = self.costs[self.row_indices[i]];
             }
-            else {
-                self.unhide(i);
-            }
-
-            i = self.down_links[i];
         }
     }
 
@@ -231,17 +251,25 @@ C: Eq + Copy + std::fmt::Debug {
         self.right_links[self.left_links[column]] = self.right_links[column];
 
         let mut i = self.down_links[column];
-        while i != column && self.costs[i] < threshold {
-            self.hide(i);
+        let mut cost = self.costs[self.row_indices[i]];
+        while i != column {
+            if cost < threshold {
+                self.hide(i);
+            }
             i = self.down_links[i];
+            cost = self.costs[self.row_indices[i]];
         }
     }
 
     fn uncover(&mut self, column: usize, threshold: usize) {
         let mut i = self.down_links[column];
-        while i != column && self.costs[i] < threshold {
-            self.unhide(i);
+        let mut cost = self.costs[self.row_indices[i]];
+        while i != column {
+            if cost < threshold {
+                self.unhide(i);
+            }
             i = self.down_links[i];
+            cost = self.costs[self.row_indices[i]];
         }
 
         self.left_links[self.right_links[column]] = column;
@@ -251,7 +279,7 @@ C: Eq + Copy + std::fmt::Debug {
     fn hide(&mut self, row_node: usize) {
         let mut i = row_node + 1;
         while i != row_node {
-            if self.colors[i] != usize::MAX {
+            if self.colors[i] != Color::Covered {
                 let header = self.header_links[i];
                 if header == 0 {
                     i = self.up_links[i];
@@ -278,7 +306,7 @@ C: Eq + Copy + std::fmt::Debug {
     fn unhide(&mut self, row_node: usize) {
         let mut i = row_node + 1;
         while i != row_node {
-            if self.colors[i] != usize::MAX {
+            if self.colors[i] != Color::Covered {
                 let header = self.header_links[i];
                 if header == 0 {
                     i = self.up_links[i];
@@ -325,12 +353,12 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    fn get_item(&self, row_node: usize) -> Item<P, S, C> {
+    fn get_item(&self, row_node: usize) -> Item<P, S> {
         let header = self.header_links[row_node];
         match self.names[header] {
             Some(Item::Primary(item)) => Item::Primary(item),
             Some(Item::Secondary(item)) => {
-                if let Some(color) = self.color_names[self.colors[header]] {
+                if let Color::Assigned(color) = self.colors[header] {
                     Item::ColoredSecondary(item, color)
                 }
                 else {
@@ -341,7 +369,7 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    fn get_row(&self, row_node: usize) -> Vec<Item<P, S, C>> {
+    fn get_row(&self, row_node: usize) -> Vec<Item<P, S>> {
         let mut row = vec![self.get_item(row_node)];
         let mut k = row_node + 1;
         while k != row_node {
@@ -359,11 +387,11 @@ C: Eq + Copy + std::fmt::Debug {
         row
     }
 
-    fn get_colors(&self) -> Vec<(S, Option<C>)> {
+    fn get_colors(&self) -> Vec<(S, Color)> {
         let mut assignments = Vec::new();
         for (i, name) in self.names.iter().enumerate() {
             if let Some(Item::Secondary(item)) = *name {
-                let color = self.color_names[self.colors[i]]; 
+                let color = self.colors[i]; 
                 assignments.push((item, color));
             }
         }
@@ -372,20 +400,23 @@ C: Eq + Copy + std::fmt::Debug {
     }
 }
 
-fn choose_column<P, S, C>(table: &DLXCTable<P, S, C>, threshold: usize) -> Option<usize> 
+fn choose_column<P, S>(table: &DLXCTable<P, S>, threshold: usize) -> Option<usize> 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
+S: Eq + Copy + std::fmt::Debug {
     let mut header = table.right_links[0];
     let mut choice_length = usize::MAX;
     let mut choice = None;
     while header != 0 {
         let mut length = 0;
         let mut i = table.down_links[header];
-        while i != header && table.costs[i] < threshold {
-            length += 1;
+        let mut cost = table.costs[table.row_indices[i]];
+        while i != header {
+            if cost < threshold {
+                length += 1;
+            }
             i = table.down_links[i];
+            cost = table.costs[table.row_indices[i]];
         }
 
         if length == 0 {
@@ -396,8 +427,8 @@ C: Eq + Copy + std::fmt::Debug {
             choice_length = table.lengths[header];
         }
         else if length == choice_length {
-            let choice_cost = table.costs[table.down_links[choice.unwrap()]];
-            let header_cost = table.costs[table.down_links[header]];
+            let choice_cost = table.costs[table.row_indices[table.down_links[choice.unwrap()]]];
+            let header_cost = table.costs[table.row_indices[table.down_links[header]]];
             if header_cost > choice_cost {
                 choice = Some(header);
                 choice_length = table.lengths[header];
@@ -409,18 +440,7 @@ C: Eq + Copy + std::fmt::Debug {
     choice
 }
 
-#[derive(Clone,PartialEq,Eq,Debug)]
-pub struct Solution<P, S, C>
-where
-P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    pub rows: Vec<Vec<Item<P, S, C>>>,
-    pub colors: Vec<(S, Option<C>)>,
-    pub cost: usize
-}
-
-// type Solution<P, S, C> = (Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>);
+type Solution<P, S> = (Vec<Vec<Item<P, S>>>, Vec<(S, Color)>);
 
 #[derive(PartialEq,Eq,Clone,Copy,Debug)]
 pub enum State {
@@ -439,25 +459,23 @@ struct LevelState {
     covering_threshold: usize
 }
 
-pub struct DLXCIter<P, S, C> 
+pub struct DLXCIter<P, S> 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    table: DLXCTable<P, S, C>,
+S: Eq + Copy + std::fmt::Debug {
+    table: DLXCTable<P, S>,
     stack: Vec<LevelState>,
     state: State,
     current_cost: usize,
     best_cost: usize
 }
 
-impl<P, S, C> DLXCIter<P, S, C>
+impl<P, S> DLXCIter<P, S>
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    pub fn new(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
-        let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
+S: Eq + Copy + std::fmt::Debug {
+    pub fn new(sets: Vec<Vec<Item<P, S>>>, primary_items: Vec<P>, secondary_items: Vec<S>) -> Self {
+        let table = DLXCTable::new(sets, primary_items, secondary_items);
         let stack = Vec::new();
         let state = State::CoveringColumn;
         let current_cost = 0;
@@ -473,9 +491,18 @@ C: Eq + Copy + std::fmt::Debug {
             .map(|level| level.hiding_threshold)
             .unwrap_or(usize::MAX);
         if let Some(column) = choose_column(&self.table, hiding_threshold) {
-            let row_node = self.table.down_links[column];
-            let cost = self.table.costs[row_node];
-            if self.best_cost <= self.current_cost + cost {
+            let mut row_node = self.table.down_links[column];
+            let mut cost = self.table.costs[self.table.row_indices[row_node]];
+            while row_node != column {
+                if self.best_cost > self.current_cost + cost {
+                    break;
+                }
+
+                row_node = self.table.down_links[row_node];
+                cost = self.table.costs[self.table.row_indices[row_node]];
+            }
+
+            if row_node == column {
                 self.state = State::BacktrackingRow;
             }
             else {
@@ -489,16 +516,8 @@ C: Eq + Copy + std::fmt::Debug {
                     hiding_threshold,
                     covering_threshold
                 });
-    
-                if row_node == column {
-                    // the column is empty
-                    // set up to return to the previous level
-                    self.state = State::BacktrackingColumn;
-                }
-                else {
-                    // cover the first row
-                    self.state = State::CoveringRow;
-                }
+
+                self.state = State::CoveringRow;
             }
         }
         else if self.table.right_links[0] == 0 {
@@ -515,7 +534,7 @@ C: Eq + Copy + std::fmt::Debug {
     fn cover_row(&mut self) {
         // cover the current row and set up for the next level 
         let level = self.stack.last_mut().unwrap();
-        let cost = self.table.costs[level.row_node];
+        let cost = self.table.costs[self.table.row_indices[level.row_node]];
         if self.best_cost <= self.current_cost + cost {
             self.state = State::BacktrackingColumn;
         }
@@ -540,8 +559,19 @@ C: Eq + Copy + std::fmt::Debug {
     fn backtrack_row(&mut self) {
         let mut level = self.stack.pop().unwrap();
         self.table.uncover_row(level.row_node, level.covering_threshold);
-        self.current_cost -= self.table.costs[level.row_node];
-        let row_node = self.table.down_links[level.row_node];
+        let cost = self.table.costs[self.table.row_indices[level.row_node]];
+        self.current_cost -= cost;
+        let header = self.table.header_links[level.row_node];
+        let mut row_node = self.table.down_links[level.row_node];
+        let mut cost = self.table.costs[self.table.row_indices[row_node]];
+        while row_node != header {
+            if self.best_cost > self.current_cost + cost {
+                break;
+            }
+
+            row_node = self.table.down_links[row_node];
+            cost = self.table.costs[self.table.row_indices[row_node]];
+        }
         level.row_node = row_node;
         self.stack.push(level);
         if level.row_node == level.column {
@@ -555,27 +585,23 @@ C: Eq + Copy + std::fmt::Debug {
         }
     }
 
-    pub fn get_solution(&self) -> Solution<P, S, C> {
+    pub fn get_solution(&self) -> (Vec<Vec<Item<P, S>>>, Vec<(S, Color)>) {
         println!("printing solution for cost {}", self.current_cost);
+        // println!("costs {:?}", self.table.costs);
         let solution = self.stack
             .iter()
             .map(|level| level.row_node)
             .map(|i| self.table.get_row(i))
             .collect();
-        Solution {
-            rows: solution,
-            colors: self.table.get_colors(),
-            cost: self.current_cost
-        }
+        (solution, self.table.get_colors())
     }
 }
 
-impl<P, S, C> DLXCIter<P, S, C> 
+impl<P, S> DLXCIter<P, S> 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    pub fn first_solution(mut self) -> Option<Solution<P, S, C>> {
+S: Eq + Copy + std::fmt::Debug {
+    pub fn first_solution(mut self) -> Option<Solution<P, S>> {
         while !self.stack.is_empty() {
             match self.state {
                 State::FoundSolution => {
@@ -598,7 +624,7 @@ C: Eq + Copy + std::fmt::Debug {
         None
     }
 
-    pub fn all_solutions(mut self) -> Vec<Solution<P, S, C>> {
+    pub fn all_solutions(mut self) -> Vec<Solution<P, S>> {
         let mut solutions = Vec::new();
         while !self.stack.is_empty() {
             match self.state {
@@ -623,9 +649,10 @@ C: Eq + Copy + std::fmt::Debug {
         solutions
     }
 
-    pub fn best_solution(mut self) -> Option<Solution<P, S, C>> {
+    pub fn best_solution(mut self) -> Option<Solution<P, S>> {
         let mut best_solution = None;
         while !self.stack.is_empty() {
+            // println!("stack: {:?}: {:?}", self.state, self.stack.last().map(|level| self.table.names[level.column]));
             match self.state {
                 State::FoundSolution => {
                     best_solution = Some(self.get_solution());
@@ -644,25 +671,22 @@ C: Eq + Copy + std::fmt::Debug {
                     self.backtrack_column();
                 },
             }
-            // println!("stack: {:?}: {:?}", self.state, self.stack.last());
         }
         best_solution
     }
 }
 
-impl<P, S, C> Iterator for DLXCIter<P, S, C> 
+impl<P, S> Iterator for DLXCIter<P, S> 
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    type Item = Solution<P, S, C>;
+S: Eq + Copy + std::fmt::Debug {
+    type Item = State;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.stack.is_empty() {
+        if !self.stack.is_empty() {
             match self.state {
-                State::FoundSolution => { 
+                State::FoundSolution => {
                     self.state = State::BacktrackingRow;
-                    return Some(self.get_solution());
                 },
                 State::CoveringColumn => {
                     self.cover_column();
@@ -677,32 +701,31 @@ C: Eq + Copy + std::fmt::Debug {
                     self.backtrack_column();
                 },
             }
+            Some(self.state)
         }
-        
-        None
+        else {
+            None
+        }
     }
 }
 
-pub fn min_cost_dlxc_iter<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> DLXCIter<P, S, C>
+pub fn min_color_cost_dlxc_iter<P, S, C>(sets: Vec<Vec<Item<P, S>>>, primary_items: Vec<P>, secondary_items: Vec<S>) -> DLXCIter<P, S>
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors)
+S: Eq + Copy + std::fmt::Debug {
+    DLXCIter::new(sets, primary_items, secondary_items)
 }
 
-pub fn min_cost_dlxc<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Option<Solution<P, S, C>>
+pub fn min_color_cost_dlxc<P, S>(sets: Vec<Vec<Item<P, S>>>, primary_items: Vec<P>, secondary_items: Vec<S>) -> Option<Solution<P, S>>
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors).best_solution()
+S: Eq + Copy + std::fmt::Debug {
+    DLXCIter::new(sets, primary_items, secondary_items).best_solution()
 }
 
-pub fn min_cost_dlxc_first<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Option<Solution<P, S, C>>
+pub fn min_color_cost_dlxc_first<P, S>(sets: Vec<Vec<Item<P, S>>>, primary_items: Vec<P>, secondary_items: Vec<S>) -> Option<Solution<P, S>>
 where
 P: Eq + Copy + std::fmt::Debug,
-S: Eq + Copy + std::fmt::Debug,
-C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors).first_solution()
+S: Eq + Copy + std::fmt::Debug {
+    DLXCIter::new(sets, primary_items, secondary_items).first_solution()
 }

@@ -2,6 +2,7 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use std::collections::BTreeSet;
 use std::iter::FromIterator;
 use std::collections::BTreeMap;
 use std::io::BufRead;
@@ -130,29 +131,23 @@ fn solve_sudoku(clues: &[Clue]) {
 
 fn solve_vertex_cover() {
     let triangle_graph_edges = btreemap!{
-        0 => vec![1,2], 
-        1 => vec![0,2], 
-        2 => vec![0,1] 
+        0 => vec![1,2].into_iter().collect(), 
+        1 => vec![0,2].into_iter().collect(), 
+        2 => vec![0,1].into_iter().collect() 
     };
-    let cover = vc_dlxc(&triangle_graph_edges, 2);
-    println!("solution: {:?}", cover);
-    let cover = vc_dlxc(&triangle_graph_edges, 3);
+    let cover = vc_dlxc(&triangle_graph_edges);
     println!("solution: {:?}", cover);
     
     println!();
 
     let star_graph_edges = btreemap!{
-        0 => vec![1,2,3,4], 
-        1 => vec![0], 
-        2 => vec![0], 
-        3 => vec![0], 
-        4 => vec![0]
+        0 => vec![1,2,3,4].into_iter().collect(), 
+        1 => vec![0].into_iter().collect(), 
+        2 => vec![0].into_iter().collect(), 
+        3 => vec![0].into_iter().collect(), 
+        4 => vec![0].into_iter().collect()
     };
-    let cover = vc_dlxc(&star_graph_edges, 1);
-    println!("solution: {:?}", cover);
-    let cover = vc_dlxc(&star_graph_edges, 2);
-    println!("solution: {:?}", cover);
-    let cover = vc_dlxc(&star_graph_edges, 4);
+    let cover = vc_dlxc(&star_graph_edges);
     println!("solution: {:?}", cover);
 }
 
@@ -179,26 +174,21 @@ fn solve_vc_dimacs() {
         edges.push((str::parse(&v1).unwrap(), str::parse(&v2).unwrap()));
     }
 
-    let mut graph = BTreeMap::<usize, Vec<usize>>::new();
+    let mut graph = BTreeMap::<usize, BTreeSet<usize>>::new();
     for (v1, v2) in edges {
-        if graph.contains_key(&v1) {
-            graph.get_mut(&v1).unwrap().push(v2);
+        if !graph.contains_key(&v1) {
+            graph.insert(v1, BTreeSet::new());
         }
-        else {
-            graph.insert(v1, vec![v2]);
-        }
+        graph.get_mut(&v1).unwrap().insert(v2);
 
-        if graph.contains_key(&v2) {
-            graph.get_mut(&v2).unwrap().push(v1);
+        if !graph.contains_key(&v2) {
+            graph.insert(v2, BTreeSet::new());
         }
-        else {
-            graph.insert(v2, vec![v1]);
-        }
+        graph.get_mut(&v2).unwrap().insert(v1);
     }
 
-    if let Some(cover) = vertex_cover::vc_dlxc(&graph, graph.len()) {
-        println!("{:?}, {:?}", cover.len(), cover);
-    }
+    let cover = vertex_cover::vc_dlxc(&graph);
+    println!("{:?}, {:?}", cover.len(), cover);
 
     // let mut i = graph.len();
     // while i > 0 {
