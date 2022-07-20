@@ -15,7 +15,7 @@ def main():
         for m in edges_samples:
             graph = networkx.gnm_random_graph(n, m)
             edges = [(x,y) for x,y in graph.edges if x < y]
-            with open(f'{folder}/graph{n}_{m}.dimacs', mode='w+') as file:
+            with open(f'{folder}/graph{n}_{m}.input', mode='w+') as file:
                 print(f'{n} {m}')
                 for x,y in edges:
                     print(x, y, file=file)
