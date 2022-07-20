@@ -2,6 +2,11 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use std::path::Display;
+use std::fs::read_dir;
+use std::fs::metadata;
+use std::time::Duration;
+use crate::queens::n_queens_dfs_first;
 use std::collections::BTreeSet;
 use std::iter::FromIterator;
 use std::collections::BTreeMap;
@@ -27,6 +32,10 @@ use crate::queens::n_queens_dfs;
 use libdlx::*;
 use maplit::*;
 
+static NTHREADS: usize = 14;
+static QUEENS_TIME_LIMIT: Duration = Duration::from_secs(60);
+static VC_TIME_LIMIT: Duration = Duration::from_secs(60);
+
 fn print_queens_solution(n: usize, solution: Vec<(usize, usize)>) {
     let mut output = String::from("");
     for row in 0..n {
@@ -43,99 +52,83 @@ fn print_queens_solution(n: usize, solution: Vec<(usize, usize)>) {
     println!("{}", output);
 }
 
-fn queens_spawn_thread(n: usize, tx: &Sender<(usize, Vec<(usize, usize)>)>) -> JoinHandle<()> {
-    let thread_dlx_tx = tx.clone();
+fn queens_spawn_thread<F>(n: usize, tx: &Sender<(usize, Option<(Vec<(usize, usize)>, Duration)>)>, 
+                          func: F) -> JoinHandle<()> 
+where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync + Send + Copy {
+    let thread_tx = tx.clone();
     spawn(move || {
         let now = Instant::now();
-        if let Some(solution) = n_queens_dlx_first(n) {
-            thread_dlx_tx.send((n, solution)).unwrap();
-            println!("Thread for n = {} finished", n);
-            println!("Took {} ms", now.elapsed().as_millis());
+        if let Some(solution) = func(n, QUEENS_TIME_LIMIT) {
+            thread_tx.send((n, Some((solution, now.elapsed())))).unwrap();
+        }
+        else {
+            thread_tx.send((n, None)).unwrap();
         }
     })
 }
 
-fn solve_queens_threaded() {
-    static NTHREADS: usize = 15;
-    
-    let (dlx_tx, dlx_rx) = channel();
+fn queens_message_format(n: usize, message: Option<(Vec<(usize, usize)>, Duration)>) -> String {
+    if let Some((_, time_elapsed)) = message {
+        String::from(format!("{} {}", n, time_elapsed.as_millis()))
+    }
+    else {
+        String::from(format!("{} -", n))
+    }
+}
+
+fn solve_queens_threaded<F>(func: F)
+where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync + Send + Copy {
+    let (tx, rx) = channel();
     let mut thread_handles = Vec::new();
 
-    let mut n_iter = (30..1000).into_iter();
+    let mut n_iter = (4..=40).into_iter();
     for _ in 0..NTHREADS {
-        let thread = queens_spawn_thread(n_iter.next().unwrap(), &dlx_tx);
+        let thread = queens_spawn_thread(n_iter.next().unwrap(), &tx, func);
         thread_handles.push(thread);
-    } 
+    }
 
     let mut i = 0;
-    while let Ok((n, _)) = dlx_rx.recv() {
-        println!("i = {}", i);
+    while let Ok((n, message)) = rx.recv() {
+        println!("{}", queens_message_format(n, message));
+        
         i += 1;
-        println!("n = {}", n);
-        println!();
-        queens_spawn_thread(n_iter.next().unwrap(), &dlx_tx);
-        // print_queens_solution(n, solution);
+        if let Some(n) = n_iter.next() {
+            let thread = queens_spawn_thread(n, &tx, func);
+            thread_handles.push(thread);
+        }
+
+        // break when all calculations have finished
+        // 37 = 40 - 4 + 1
+        if i == 37 {
+            break;
+        }
     }
 
     for thread in thread_handles {
         thread.join().unwrap();
     }
-} 
-
-fn solve_queens_mp() {
-    for n in 1..1000 {
-        println!("n = {}", n);
-
-        // let now = Instant::now();
-        // if let Some(solution) = n_queens_dlx_first_mp(n, 15) {
-        //     print_queens_solution(n, solution);
-        //     println!("Took {} ms", now.elapsed().as_millis());
-        //     println!();
-        // }
-        // else {
-        //     println!("No solution");
-        // }
-        for solution in n_queens_dlx_iter_mp(n, 15) {
-            print_queens_solution(n, solution);
-            println!();
-        }
-    }
 }
 
-fn solve_queens() {
-    for n in 1..100 {
-        println!("n = {}", n);
-
+fn solve_queens<F>(func: F)
+where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Copy {
+    for n in 4..40 {
         let now = Instant::now();
-        if let Some(solution) = n_queens_dlx_first(n) {
-            print_queens_solution(n, solution);
-            println!("Took {} ms", now.elapsed().as_millis());
-            println!();
+        if let Some(_) = func(n, QUEENS_TIME_LIMIT) {
+            println!("{} {}", n, now.elapsed().as_millis());
         }
         else {
-            println!("No solution");
+            println!("{} -", n);
         }
-        // for solution in n_queens_dlx_iter(n) {
-        //     print_queens_solution(n, solution);
-        //     println!();
-        // }
     }
 }
 
-fn solve_sudoku(clues: &[Clue]) {
-    if let Some(solution) = sudoku_dlx_first(clues) {
-        println!("{:?}", solution);
-        println!();
-    }
-}
-
-fn solve_vertex_cover() {
+fn test_vertex_cover() {
     let triangle_graph_edges = btreemap!{
         0 => vec![1,2].into_iter().collect(), 
         1 => vec![0,2].into_iter().collect(), 
         2 => vec![0,1].into_iter().collect() 
     };
-    let cover = vc_dlxc(&triangle_graph_edges);
+    let cover = vc_dlxc(triangle_graph_edges, Duration::from_secs(1));
     println!("solution: {:?}", cover);
     
     println!();
@@ -147,17 +140,14 @@ fn solve_vertex_cover() {
         3 => vec![0].into_iter().collect(), 
         4 => vec![0].into_iter().collect()
     };
-    let cover = vc_dlxc(&star_graph_edges);
+    let cover = vc_dlxc(star_graph_edges, Duration::from_secs(1));
     println!("solution: {:?}", cover);
 }
 
-fn solve_vc_dimacs() {
-    
-    let args: Vec<String> = env::args().collect();
-    let filename = args.get(1).expect("Expected a filename as first argument.");
-    let file = fs::File::open(filename).expect("This file does not exist.");
+fn read_dimacs_graph(filename: &str) -> (usize, usize, BTreeMap<usize, BTreeSet<usize>>) {
+    let file = fs::File::open(filename).expect("The input file does not exist.");
     let reader = BufReader::new(file);
-    let mut lines_iter = reader.lines().into_iter()
+    let lines_iter = reader.lines().into_iter()
         .map(|line| line.unwrap()
             .to_owned()
             .split(" ")
@@ -165,14 +155,16 @@ fn solve_vc_dimacs() {
             .collect::<Vec<_>>())
         .map(|tokens| (tokens[0].clone(), tokens[1].clone()));
 
-    let (vc, ec) = lines_iter.next().unwrap();
-    let vertex_count = str::parse::<usize>(&vc[1..]).unwrap();
-    let edge_count = str::parse::<usize>(&ec).unwrap();
+    // let (vc, ec) = lines_iter.next().unwrap();
+    // let vertex_count = str::parse::<usize>(&vc[1..]).unwrap();
+    // let edge_count = str::parse::<usize>(&ec).unwrap();
 
-    let mut edges = Vec::<(usize, usize)>::with_capacity(edge_count);
+    let mut edges = Vec::<(usize, usize)>::new();
     for (v1, v2) in lines_iter {
         edges.push((str::parse(&v1).unwrap(), str::parse(&v2).unwrap()));
     }
+
+    let edge_count = edges.len();
 
     let mut graph = BTreeMap::<usize, BTreeSet<usize>>::new();
     for (v1, v2) in edges {
@@ -187,32 +179,42 @@ fn solve_vc_dimacs() {
         graph.get_mut(&v2).unwrap().insert(v1);
     }
 
-    let cover = vertex_cover::vc_dlxc(&graph);
-    println!("{:?}, {:?}", cover.len(), cover);
+    let max_vertex = graph.keys().max().cloned().unwrap_or(0);
+    let vertex_count = max_vertex + 1;
 
-    // let mut i = graph.len();
-    // while i > 0 {
-    //     println!("i = {}", i);
-    //     if let Some(cover) = vertex_cover::vc_dlxc(&graph, i) {
-    //         println!("{:?}", cover);
-    //         i = cover.len() - 1;
-    //     }
-    //     else {
-    //         break
-    //     }
-    // }
+    (vertex_count, edge_count, graph)
+}
 
-    // for i in (1..=graph.len()).into_iter().rev() {
-    //     println!("i = {}", i);
-    //     if let Some(cover) = vertex_cover::vc_dlxc(&graph, i) {
-    //         println!("{:?}", cover);
-    //     }
-    // }
+fn solve_vc_dimacs(filename: &str) {
+    let (vertex_count, edge_count, graph) = read_dimacs_graph(filename);
+
+    let start_time = Instant::now();
+    let _cover = vertex_cover::vc_dlxc(graph, VC_TIME_LIMIT);
+    let elapsed = start_time.elapsed();
+    // println!("{:?}, {:?}", cover.len(), cover);
+    println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
 }
 
 fn main() {
-    // solve_sudoku(&[]);
-    // solve_queens_mp();
-    // solve_vertex_cover();
-    solve_vc_dimacs();
+    let args: Vec<String> = env::args().collect();
+    let problem = &args[1];
+    if problem == "queens" {
+        let algo = &args[2];
+        if algo == "dlx" {
+            solve_queens(n_queens_dlx_first);
+        }
+        else if algo == "dlx_mp" {
+            solve_queens_threaded(n_queens_dlx_first);
+        }
+        else if algo == "dfs" {
+            solve_queens(n_queens_dfs_first);   
+        }
+        else if algo == "dfs_mp" {
+            solve_queens_threaded(n_queens_dfs_first);
+        }
+    }
+    else if problem == "vc" {
+        let filename = &args[2];
+        solve_vc_dimacs(filename);
+    }
 }

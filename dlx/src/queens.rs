@@ -3,8 +3,9 @@ pub use dfs::*;
 
 mod dlx {
 
-    use crate::dlxc::dlxc_iter_mp;
-use crate::dlxc::dlxc_first;
+    use std::time::Duration;
+use crate::dlxc::dlxc_iter_mp;
+    use crate::dlxc::dlxc_first;
     use crate::dlxc::dlxc_first_mp;
     use crate::dlxc::dlxc_iter;
     use crate::dlxc::Item;
@@ -82,11 +83,11 @@ use crate::dlxc::dlxc_first;
         Box::new(iter)
     }
 
-    pub fn n_queens_dlx_first(n : usize) -> Option<Vec<(usize, usize)>> {
+    pub fn n_queens_dlx_first(n : usize, time_limit: Duration) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-        let solution = dlxc_first(problem_sets, primary_items, secondary_items, Vec::new());
+        let solution = dlxc_first(problem_sets, primary_items, secondary_items, Vec::new(), time_limit);
 
         solution.map(|(sol, _)| dlx_to_solution(&sol))
     }
@@ -112,7 +113,10 @@ use crate::dlxc::dlxc_first;
 }
 
 mod dfs {
-    fn conflict(queens: &[(usize, usize)]) -> bool {
+    use std::time::Duration;
+use std::time::Instant;
+
+fn conflict(queens: &[(usize, usize)]) -> bool {
         for i in 1..queens.len() {
             for j in 0..i {
                 let (rowa, cola) = queens[i];
@@ -125,10 +129,14 @@ mod dfs {
         false
     }
 
-    pub fn n_queens_dfs(n: usize) -> Vec<Vec<(usize, usize)>> {
+    pub fn n_queens_dfs(n: usize, time_limit: Duration) -> Option<Vec<Vec<(usize, usize)>>> {
+        let start_time = Instant::now();
         let mut solutions = Vec::new();
         let mut stack = vec![Vec::new()];
         while let Some(solution) = stack.pop() {
+            if start_time.elapsed() >= time_limit {
+                return None
+            }
             if conflict(&solution) {
                 continue;
             }
@@ -146,19 +154,23 @@ mod dfs {
                 stack.push(queens);
             }
         }
-        solutions
+        Some(solutions)
     }
 
-    pub fn n_queens_dfs_first(n: usize) -> Vec<(usize, usize)> {
+    pub fn n_queens_dfs_first(n: usize, time_limit: Duration) -> Option<Vec<(usize, usize)>> {
+        let start_time = Instant::now();
         let mut stack = vec![Vec::new()];
         while let Some(solution) = stack.pop() {
+            if start_time.elapsed() >= time_limit {
+                break
+            }
             if conflict(&solution) {
                 continue;
             }
 
             let row = solution.len();
             if row == n {
-                return solution
+                return Some(solution)
             }
 
             for column in 0..n {
@@ -168,6 +180,6 @@ mod dfs {
                 stack.push(queens);
             }
         }
-        Vec::new()
+        None
     }
 }

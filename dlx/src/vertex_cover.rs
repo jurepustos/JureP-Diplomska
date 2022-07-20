@@ -14,7 +14,9 @@ pub fn check_vertex_cover(graph_edges: &Vec<(usize, usize)>, cover: &BTreeSet<us
 }
 
 mod dlx {
-    use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
+    use std::time::Instant;
+use std::time::Duration;
+use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
     use std::collections::VecDeque;
     use crate::dlxc::dlxc_iter;
     use crate::min_cost_dlxc::min_cost_dlxc_first;
@@ -22,9 +24,6 @@ mod dlx {
     // use libdlx::dlxc::Item;
     use libdlx::min_cost_dlxc::Item;
     use libdlx::min_cost_dlxc::min_cost_dlxc;
-    use libdlx::min_color_cost_dlxc::Color;
-    // use libdlx::min_color_cost_dlxc::Item;
-    use libdlx::min_color_cost_dlxc::min_color_cost_dlxc;
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
     use std::cmp::min;
@@ -67,6 +66,22 @@ mod dlx {
         next_vertex: usize
     }
 
+    impl Reductions {
+        fn new(max_vertex: usize) -> Self {
+            Reductions {
+                exclusions: BTreeSet::new(),
+                inclusions: BTreeSet::new(),
+                degree_two_folds: Vec::new(),
+                twin_folds: Vec::new(),
+                next_vertex: max_vertex + 1
+            }
+        }
+
+        fn len(&self) -> usize {
+            self.exclusions.len() + self.inclusions.len() + self.degree_two_folds.len() + self.twin_folds.len()
+        }
+    }
+
     fn make_primaries(graph: &Graph) -> Vec<Primary> {
         let mut primaries = Vec::new();
         for (a, neighbors) in graph {
@@ -74,10 +89,6 @@ mod dlx {
                 primaries.push(Primary::Vertex(*a));
             }
         }
-
-        // for i in 0..primaries.len()-1 {
-        //     primaries.push(Primary::SizeConstraint(i));
-        // }
     
         primaries
     }
@@ -90,29 +101,10 @@ mod dlx {
             }
         }
     
-        // for i in 0..graph.len()-1 {
-        //     secondaries.push(Secondary::SumVar(i));
-        // }
-    
         secondaries
     }
     
     fn add_edge_options(sets: &mut Vec<(Vec<Item<Primary, Secondary, usize>>, usize)>, graph: &Graph) {
-        // let mut preset_set = vec![];
-        // for a in &reductions.inclusions {
-        //     preset_set.push(Item::Primary(Primary::Vertex(*a)));
-        // }
-        // for b in &reductions.exclusions {
-        //     preset_set.push(Item::Primary(Primary::Vertex(*b)));
-        // }
-        // for a in &reductions.inclusions {
-        //     preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*a), 1));
-        // }
-        // for b in &reductions.exclusions {
-        //     preset_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 0));
-        // }
-        // sets.push((preset_set, reductions.inclusions.len()));
-
         for (a, neighbors) in graph {
             if neighbors.len() > 0 {
                 sets.push((vec![
@@ -125,20 +117,9 @@ mod dlx {
                     Item::ColoredSecondary(Secondary::Vertex(*a), 0)
                 ];
                 for b in neighbors {
-                    // exclude_set.push(Item::Primary(Primary::Vertex(*b)));
                     exclude_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 1));
                 }
                 sets.push((exclude_set, 0));  
-
-                // let mut exclude_set = vec![
-                //     Item::Primary(Primary::Vertex(*a)),
-                //     Item::ColoredSecondary(Secondary::Vertex(*a), 0)
-                // ];
-                // for b in neighbors {
-                //     exclude_set.push(Item::Primary(Primary::Vertex(*b)));
-                //     exclude_set.push(Item::ColoredSecondary(Secondary::Vertex(*b), 1));
-                // }
-                // sets.push((exclude_set, neighbors.len()));  
             }
         }
     }
@@ -355,21 +336,24 @@ mod dlx {
         }
     }
 
+    fn reduction_round(graph: &mut Graph, reductions: &mut Reductions) {
+        degree_one_reduction(graph, reductions);
+        degree_two_reduction(graph, reductions);
+        twin_reduction(graph, reductions);
+        dominance_reduction(graph, reductions);
+        unconfined_reduction(graph, reductions);
+    }
+
     fn reduce_graph(graph: &mut Graph) -> Reductions {
         let max_vertex = graph.keys().cloned().max().unwrap_or(0);
-        let mut reductions = Reductions {
-            exclusions: BTreeSet::new(),
-            inclusions: BTreeSet::new(),
-            degree_two_folds: Vec::new(),
-            twin_folds: Vec::new(),
-            next_vertex: max_vertex + 1
-        };
+        let mut reductions = Reductions::new(max_vertex);
 
-        degree_one_reduction(graph, &mut reductions);
-        degree_two_reduction(graph, &mut reductions);
-        twin_reduction(graph, &mut reductions);
-        dominance_reduction(graph, &mut reductions);
-        unconfined_reduction(graph, &mut reductions);
+        let mut reductions_count = reductions.len();
+        reduction_round(graph, &mut reductions);
+        while reductions.len() > reductions_count {
+            reductions_count = reductions.len();
+            reduction_round(graph, &mut reductions);
+        }
 
         reductions
     }
@@ -410,7 +394,9 @@ mod dlx {
         components
     }
 
-    fn unfold_cover(cover: &mut BTreeSet<usize>, reductions: &Reductions) {
+    fn unreduce_cover(cover: &mut BTreeSet<usize>, reductions: &Reductions) {
+        cover.append(&mut reductions.inclusions.clone());
+
         for fold in reductions.twin_folds.iter().rev() {
             if cover.contains(&fold.new_vertex) {
                 cover.remove(&fold.new_vertex);
@@ -437,12 +423,9 @@ mod dlx {
         }
     }
 
-    fn component_cover(mut graph: Graph) -> Option<Vec<usize>> {
-        let reductions = reduce_graph(&mut graph);
+    fn component_cover(graph: &Graph, time_limit: Duration) -> Option<Vec<usize>> {
         if graph.is_empty() {
-            let mut cover = reductions.inclusions.clone();
-            unfold_cover(&mut cover, &reductions);
-            return Some(cover.into_iter().collect());
+            return Some(Vec::new());
         }
 
         let primaries = make_primaries(&graph);
@@ -454,8 +437,9 @@ mod dlx {
 
         let mut iter = min_cost_dlxc_iter(sets, primaries, secondaries, sizes);
         let mut cover = BTreeSet::<usize>::new();
+        let start_time = Instant::now();
         while let Some(solution) = iter.next() {
-            cover = reductions.inclusions.clone();
+            cover = BTreeSet::new();
             for (item, color) in solution.colors {
                 if let Secondary::Vertex(i) = item {
                     if let Some(1) = color {
@@ -464,30 +448,33 @@ mod dlx {
                 }
             }
 
-            if cover.len() == reductions.inclusions.len() {
-                unfold_cover(&mut cover, &reductions);
-                return Some(cover.into_iter().collect())
+            if start_time.elapsed() > time_limit {
+                return None
             }
         }
         
-        if !cover.is_empty() {
-            unfold_cover(&mut cover, &reductions);
-            Some(cover.into_iter().collect())
-        }
-        else {
-            None
-        }
+        Some(cover.into_iter().collect())
     }
 
-    pub fn vc_dlxc(graph: &Graph) -> Vec<usize> {
-        let mut full_cover = Vec::<usize>::new();
-        let components = get_connected_components(graph);
+    pub fn vc_dlxc(mut graph: Graph, time_limit: Duration) -> Option<Vec<usize>> {
+        let start_time = Instant::now();
+        let mut full_cover = BTreeSet::<usize>::new();
+        let reductions = reduce_graph(&mut graph);
+        let components = get_connected_components(&graph);
         for component in components {
-            let cover = component_cover(component).unwrap();
-            for v in cover {
-                full_cover.push(v);
+            if start_time.elapsed() >= time_limit {
+                return Some(Vec::new())
+            }
+            if let Some(cover) = component_cover(&component, time_limit - start_time.elapsed()) {
+                for v in cover {
+                    full_cover.insert(v);
+                }
+            }
+            else {
+                return None
             }
         }
-        full_cover
+        unreduce_cover(&mut full_cover, &reductions);
+        Some(full_cover.into_iter().collect())
     }
 }

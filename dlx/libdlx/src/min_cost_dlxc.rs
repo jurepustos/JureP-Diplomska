@@ -1,3 +1,6 @@
+use std::time::Instant;
+use std::time::Duration;
+
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Item<P, S, C> 
 where
@@ -575,8 +578,12 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    pub fn first_solution(mut self) -> Option<Solution<P, S, C>> {
+    pub fn first_solution(mut self, time_limit: Duration) -> Option<Solution<P, S, C>> {
+        let start_time = Instant::now();
         while !self.stack.is_empty() {
+            if start_time.elapsed() > time_limit {
+                return None
+            }
             match self.state {
                 State::FoundSolution => {
                     return Some(self.get_solution())
@@ -598,9 +605,13 @@ C: Eq + Copy + std::fmt::Debug {
         None
     }
 
-    pub fn all_solutions(mut self) -> Vec<Solution<P, S, C>> {
+    pub fn all_solutions(mut self, time_limit: Duration) -> Vec<Solution<P, S, C>> {
+        let start_time = Instant::now();
         let mut solutions = Vec::new();
         while !self.stack.is_empty() {
+            if start_time.elapsed() > time_limit {
+                break;
+            }
             match self.state {
                 State::FoundSolution => {
                     self.state = State::BacktrackingRow;
@@ -623,9 +634,13 @@ C: Eq + Copy + std::fmt::Debug {
         solutions
     }
 
-    pub fn best_solution(mut self) -> Option<Solution<P, S, C>> {
+    pub fn best_solution(mut self, time_limit: Duration) -> Option<Solution<P, S, C>> {
+        let start_time = Instant::now();
         let mut best_solution = None;
         while !self.stack.is_empty() {
+            if start_time.elapsed() >= time_limit {
+                return None
+            }
             match self.state {
                 State::FoundSolution => {
                     best_solution = Some(self.get_solution());
@@ -691,18 +706,20 @@ C: Eq + Copy + std::fmt::Debug {
     DLXCIter::new(sets, primary_items, secondary_items, colors)
 }
 
-pub fn min_cost_dlxc<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Option<Solution<P, S, C>>
+pub fn min_cost_dlxc<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, 
+                              colors: Vec<C>, time_limit: Duration) -> Option<Solution<P, S, C>>
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors).best_solution()
+    DLXCIter::new(sets, primary_items, secondary_items, colors).best_solution(time_limit)
 }
 
-pub fn min_cost_dlxc_first<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Option<Solution<P, S, C>>
+pub fn min_cost_dlxc_first<P, S, C>(sets: Vec<(Vec<Item<P, S, C>>, usize)>, primary_items: Vec<P>, secondary_items: Vec<S>, 
+                                    colors: Vec<C>, time_limit: Duration) -> Option<Solution<P, S, C>>
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors).first_solution()
+    DLXCIter::new(sets, primary_items, secondary_items, colors).first_solution(time_limit)
 }

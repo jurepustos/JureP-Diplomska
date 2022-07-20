@@ -540,8 +540,12 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    fn first_solution(&mut self) -> Option<Solution<P, S, C>> {
+    fn first_solution(&mut self, time_limit: Duration) -> Option<Solution<P, S, C>> {
+        let start = Instant::now();
         while !self.stack.is_empty() {
+            if start.elapsed() >= time_limit {
+                return None
+            }
             match self.state {
                 State::FoundSolution => {
                     return self.get_solution()
@@ -563,9 +567,13 @@ C: Eq + Copy + std::fmt::Debug {
         None
     }
 
-    fn all_solutions(&mut self) -> Vec<Solution<P, S, C>> {
+    fn all_solutions(&mut self, time_limit: Duration) -> Vec<Solution<P, S, C>> {
+        let start = Instant::now();
         let mut solutions = Vec::new();
         while !self.stack.is_empty() {
+            if start.elapsed() >= time_limit {
+                break;
+            }
             match self.state {
                 State::FoundSolution => {
                     self.state = State::BacktrackingRow;
@@ -634,15 +642,16 @@ C: Eq + Copy + std::fmt::Debug {
 }
 
 pub fn dlxc_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, 
-                           colors: Vec<C>) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)>
+                           colors: Vec<C>, time_limit: Duration) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)>
 where 
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
-    search(&mut table, &mut Vec::new())
+    DLXCIter::new(sets, primary_items, secondary_items, colors).first_solution(time_limit)
 }
 
+use std::time::Instant;
+use std::time::Duration;
 pub use mp::*;
 
 mod mp {
