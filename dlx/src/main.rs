@@ -189,10 +189,14 @@ fn solve_vc_dimacs(filename: &str) {
     let (vertex_count, edge_count, graph) = read_dimacs_graph(filename);
 
     let start_time = Instant::now();
-    let _cover = vertex_cover::vc_dlxc(graph, VC_TIME_LIMIT);
-    let elapsed = start_time.elapsed();
-    // println!("{:?}, {:?}", cover.len(), cover);
-    println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
+    if let Some(cover) = vertex_cover::vc_dlxc(graph, VC_TIME_LIMIT) {
+        let elapsed = start_time.elapsed();
+        // println!("{:?}, {:?}", cover.len(), cover);
+        println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
+    }
+    else {
+        println!("{} {} -", vertex_count, edge_count);
+    }
 }
 
 fn main() {
@@ -216,5 +220,8 @@ fn main() {
     else if problem == "vc" {
         let filename = &args[2];
         solve_vc_dimacs(filename);
+    }
+    else {
+        test_vertex_cover()
     }
 }

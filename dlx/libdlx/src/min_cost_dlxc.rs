@@ -559,7 +559,6 @@ C: Eq + Copy + std::fmt::Debug {
     }
 
     pub fn get_solution(&self) -> Solution<P, S, C> {
-        println!("printing solution for cost {}", self.current_cost);
         let solution = self.stack
             .iter()
             .map(|level| level.row_node)
@@ -659,7 +658,6 @@ C: Eq + Copy + std::fmt::Debug {
                     self.backtrack_column();
                 },
             }
-            // println!("stack: {:?}: {:?}", self.state, self.stack.last());
         }
         best_solution
     }

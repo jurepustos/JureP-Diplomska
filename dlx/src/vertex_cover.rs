@@ -154,15 +154,15 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
         let vertices: Vec<usize> = graph.keys().cloned().collect();
         for &a in &vertices {
             for &b in vertices.iter().filter(|b| **b > a) {
-                let mut a_neighbors = graph[&a].clone();
-                a_neighbors.insert(a);
-
-                let mut b_neighbors = graph[&b].clone();
-                b_neighbors.insert(b);
-
-                if a_neighbors.is_superset(&b_neighbors) {
-                    reductions.inclusions.insert(a);
-                    delete_vertex(graph, a);
+                if let (Some(mut a_neighbors), Some(mut b_neighbors)) = 
+                        (graph.get(&a).cloned(), graph.get(&b).cloned()) {
+                    a_neighbors.insert(a);
+                    b_neighbors.insert(b);
+                    
+                    if a_neighbors.is_superset(&b_neighbors) {
+                        reductions.inclusions.insert(a);
+                        delete_vertex(graph, a);
+                    }
                 }
             }
         }
@@ -424,6 +424,7 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
     }
 
     fn component_cover(graph: &Graph, time_limit: Duration) -> Option<Vec<usize>> {
+        let start_time = Instant::now();
         if graph.is_empty() {
             return Some(Vec::new());
         }
@@ -435,11 +436,9 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
         let mut sets = Vec::new();
         add_edge_options(&mut sets, &graph);
 
-        let mut iter = min_cost_dlxc_iter(sets, primaries, secondaries, sizes);
-        let mut cover = BTreeSet::<usize>::new();
-        let start_time = Instant::now();
-        while let Some(solution) = iter.next() {
-            cover = BTreeSet::new();
+        let iter = min_cost_dlxc_iter(sets, primaries, secondaries, sizes);
+        if let Some(solution) = iter.best_solution(time_limit.saturating_sub(start_time.elapsed())) {
+            let mut cover = BTreeSet::new();
             for (item, color) in solution.colors {
                 if let Secondary::Vertex(i) = item {
                     if let Some(1) = color {
@@ -447,13 +446,12 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
                     }
                 }
             }
-
-            if start_time.elapsed() > time_limit {
-                return None
-            }
+            Some(cover.into_iter().collect())
+        }
+        else {
+            return None
         }
         
-        Some(cover.into_iter().collect())
     }
 
     pub fn vc_dlxc(mut graph: Graph, time_limit: Duration) -> Option<Vec<usize>> {
@@ -465,7 +463,7 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
             if start_time.elapsed() >= time_limit {
                 return Some(Vec::new())
             }
-            if let Some(cover) = component_cover(&component, time_limit - start_time.elapsed()) {
+            if let Some(cover) = component_cover(&component, time_limit.saturating_sub(start_time.elapsed())) {
                 for v in cover {
                     full_cover.insert(v);
                 }
