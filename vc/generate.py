@@ -5,6 +5,12 @@ import networkx
 from typing import List, Tuple
 
 
+"""
+Generate random Erdos graphs and save them as files in the specified directory.
+Takes one command line parameter: directory to store generated graphs
+WIll create directory if it doesn't exist. Will overwrite any conflicting filename
+"""
+
 def main():
     folder = sys.argv[1]
     if not os.path.exists(folder):

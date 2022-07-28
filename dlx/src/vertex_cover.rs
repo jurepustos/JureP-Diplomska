@@ -15,8 +15,8 @@ pub fn check_vertex_cover(graph_edges: &Vec<(usize, usize)>, cover: &BTreeSet<us
 
 mod dlx {
     use std::time::Instant;
-use std::time::Duration;
-use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
+    use std::time::Duration;
+    use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
     use std::collections::VecDeque;
     use crate::dlxc::dlxc_iter;
     use crate::min_cost_dlxc::min_cost_dlxc_first;
@@ -394,32 +394,40 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
         components
     }
 
+    fn unfold_twins(cover: &mut BTreeSet<usize>, fold: &TwinFold) {
+        if cover.contains(&fold.new_vertex) {
+            cover.remove(&fold.new_vertex);
+            for n in fold.neighbors {
+                cover.insert(n);
+            }
+        }
+        else {
+            cover.insert(fold.twins[0]);
+            cover.insert(fold.twins[1]);
+        }
+    }
+
+    fn unfold_deg2(cover: &mut BTreeSet<usize>, fold: &DegreeTwoFold) {
+        if cover.contains(&fold.new_vertex) {
+            cover.remove(&fold.new_vertex);
+            for n in fold.neighbors {
+                cover.insert(n);
+            }
+        }
+        else {
+            cover.insert(fold.vertex);
+        }
+    }
+
     fn unreduce_cover(cover: &mut BTreeSet<usize>, reductions: &Reductions) {
         cover.append(&mut reductions.inclusions.clone());
 
         for fold in reductions.twin_folds.iter().rev() {
-            if cover.contains(&fold.new_vertex) {
-                cover.remove(&fold.new_vertex);
-                for n in fold.neighbors {
-                    cover.insert(n);
-                }
-            }
-            else {
-                cover.insert(fold.twins[0]);
-                cover.insert(fold.twins[1]);
-            }
+            unfold_twins(cover, &fold);
         }
 
         for fold in reductions.degree_two_folds.iter().rev() {
-            if cover.contains(&fold.new_vertex) {
-                cover.remove(&fold.new_vertex);
-                for n in fold.neighbors {
-                    cover.insert(n);
-                }
-            }
-            else {
-                cover.insert(fold.vertex);
-            }
+            unfold_deg2(cover, &fold);
         }
     }
 
@@ -454,7 +462,7 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
         
     }
 
-    pub fn vc_dlxc(mut graph: Graph, time_limit: Duration) -> Option<Vec<usize>> {
+    pub fn vc_reduce_dlxc(mut graph: Graph, time_limit: Duration) -> Option<Vec<usize>> {
         let start_time = Instant::now();
         let mut full_cover = BTreeSet::<usize>::new();
         let reductions = reduce_graph(&mut graph);
@@ -474,5 +482,9 @@ use libdlx::min_cost_dlxc::min_cost_dlxc_iter;
         }
         unreduce_cover(&mut full_cover, &reductions);
         Some(full_cover.into_iter().collect())
+    }
+
+    pub fn vc_pure_dlxc(graph: Graph, time_limit: Duration) -> Option<Vec<usize>> {
+        component_cover(&graph, time_limit)
     }
 }

@@ -6,16 +6,15 @@ use std::path::Display;
 use std::fs::read_dir;
 use std::fs::metadata;
 use std::time::Duration;
-use crate::queens::n_queens_dfs_first;
 use std::collections::BTreeSet;
 use std::iter::FromIterator;
 use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::BufReader;
-use crate::queens::n_queens_dlx_iter_mp;
-use crate::vertex_cover::vc_dlxc;
-use crate::queens::n_queens_dlx_first_mp;
-use crate::sudoku::sudoku_dlx_first;
+use queens::n_queens_dlx_iter_mp;
+use vertex_cover::vc_reduce_dlxc;
+use queens::n_queens_dlx_first_mp;
+use sudoku::sudoku_dlx_first;
 use std::time::Instant;
 use std::thread::JoinHandle;
 use std::thread::spawn;
@@ -24,11 +23,12 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
 use std::fs;
 use std::env;
-use crate::sudoku::Clue;
-use crate::sudoku::sudoku_dlx;
-use crate::queens::n_queens_dlx_iter;
-use crate::queens::n_queens_dlx_first;
-use crate::queens::n_queens_dfs;
+use sudoku::Clue;
+use sudoku::sudoku_dlx;
+use queens::n_queens_dlx_iter;
+use queens::n_queens_dlx_first;
+use queens::n_queens_dfs;
+use queens::n_queens_dfs_first;
 use libdlx::*;
 use maplit::*;
 
@@ -128,7 +128,7 @@ fn test_vertex_cover() {
         1 => vec![0,2].into_iter().collect(), 
         2 => vec![0,1].into_iter().collect() 
     };
-    let cover = vc_dlxc(triangle_graph_edges, Duration::from_secs(1));
+    let cover = vertex_cover::vc_reduce_dlxc(triangle_graph_edges, Duration::from_secs(1));
     println!("solution: {:?}", cover);
     
     println!();
@@ -140,7 +140,7 @@ fn test_vertex_cover() {
         3 => vec![0].into_iter().collect(), 
         4 => vec![0].into_iter().collect()
     };
-    let cover = vc_dlxc(star_graph_edges, Duration::from_secs(1));
+    let cover = vertex_cover::vc_reduce_dlxc(star_graph_edges, Duration::from_secs(1));
     println!("solution: {:?}", cover);
 }
 
@@ -185,11 +185,25 @@ fn read_dimacs_graph(filename: &str) -> (usize, usize, BTreeMap<usize, BTreeSet<
     (vertex_count, edge_count, graph)
 }
 
-fn solve_vc_dimacs(filename: &str) {
+fn solve_reduce_vc(filename: &str) {
     let (vertex_count, edge_count, graph) = read_dimacs_graph(filename);
 
     let start_time = Instant::now();
-    if let Some(cover) = vertex_cover::vc_dlxc(graph, VC_TIME_LIMIT) {
+    if let Some(cover) = vertex_cover::vc_reduce_dlxc(graph, VC_TIME_LIMIT) {
+        let elapsed = start_time.elapsed();
+        // println!("{:?}, {:?}", cover.len(), cover);
+        println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
+    }
+    else {
+        println!("{} {} -", vertex_count, edge_count);
+    }
+}
+
+fn solve_pure_vc(filename: &str) {
+    let (vertex_count, edge_count, graph) = read_dimacs_graph(filename);
+
+    let start_time = Instant::now();
+    if let Some(cover) = vertex_cover::vc_pure_dlxc(graph, VC_TIME_LIMIT) {
         let elapsed = start_time.elapsed();
         // println!("{:?}, {:?}", cover.len(), cover);
         println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
@@ -218,8 +232,15 @@ fn main() {
         }
     }
     else if problem == "vc" {
-        let filename = &args[2];
-        solve_vc_dimacs(filename);
+        let mode = &args[2];
+        let filename = &args[3];
+        if mode == "pure" {
+            solve_pure_vc(filename);
+        }
+        else if mode == "reduce" {
+            solve_reduce_vc(filename);
+        }
+        
     }
     else {
         test_vertex_cover()

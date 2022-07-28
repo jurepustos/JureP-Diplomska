@@ -4,6 +4,14 @@ import string
 import sys
 import subprocess
 
+"""
+Run the specified VC solver on all test cases and output the timing results.
+Takes two parameters: 
+1. the executable to run as the solver
+2. directory containing test inputs
+The executable should take just one parameter: filename for the input file
+"""
+
 def run_program(program: str, filename: str) -> bytes:
     print('Starting', filename, file=sys.stderr)
     proc = subprocess.Popen([program, filename], stdout=subprocess.PIPE)
