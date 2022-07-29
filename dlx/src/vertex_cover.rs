@@ -341,7 +341,7 @@ mod dlx {
         degree_two_reduction(graph, reductions);
         twin_reduction(graph, reductions);
         dominance_reduction(graph, reductions);
-        unconfined_reduction(graph, reductions);
+        // unconfined_reduction(graph, reductions);
     }
 
     fn reduce_graph(graph: &mut Graph) -> Reductions {
