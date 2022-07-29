@@ -21,7 +21,13 @@ def main():
     keys = list(set(data1.keys()).union(set(data2.keys())))
     keys.sort()
     for i,key in enumerate(keys):
-        print(key, '&', data1.get(key, None), '&', data2.get(key, None), '&' if i % 2 == 0 else '\\\\')
+        print(key, '&', end=' ')
+        print(data1[key], '&', end=' ') 
+        print(data2[key], end=' ')
+        if i % 3 != 2:
+            print('&')
+        else:
+            print('\\\\')
 
 
 if __name__ == '__main__':
