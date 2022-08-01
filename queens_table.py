@@ -1,4 +1,4 @@
-from math import inf
+from math import ceil, floor, inf
 import sys
 
 
@@ -20,14 +20,21 @@ def main():
 
     keys = list(set(data1.keys()).union(set(data2.keys())))
     keys.sort()
-    for i,key in enumerate(keys):
-        print(key, '&', end=' ')
-        print(data1[key], '&', end=' ') 
-        print(data2[key], end=' ')
-        if i % 3 != 2:
-            print('&')
-        else:
-            print('\\\\')
+
+    data_rows = []
+    for key in keys:
+        data_rows.append(f'{key} & {data1[key]} & {data2[key]}')
+
+    third = ceil(len(data_rows) / 3)
+    for i in range(third):
+        print(data_rows[i], '&')
+        print(data_rows[i + third], '&')
+        try:
+            print(data_rows[i + 2*third], '\\\\')
+        except:
+            print('& & \\\\')
+
+    print()
 
 
 if __name__ == '__main__':
