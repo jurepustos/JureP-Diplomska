@@ -1,2 +1,2 @@
-#!/bin/sh
-java -cp bin Main $1
+#!/bin/bash
+timeout 60s java -cp bin Main $1

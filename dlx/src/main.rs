@@ -81,7 +81,7 @@ where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync
     let (tx, rx) = channel();
     let mut thread_handles = Vec::new();
 
-    let mut n_iter = (4..=40).into_iter();
+    let mut n_iter = (5..=80).step_by(5).into_iter();
     for _ in 0..NTHREADS {
         let thread = queens_spawn_thread(n_iter.next().unwrap(), &tx, func);
         thread_handles.push(thread);
@@ -111,7 +111,7 @@ where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync
 
 fn solve_queens<F>(func: F)
 where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Copy {
-    for n in 4..40 {
+    for n in (5..=80).step_by(5) {
         let now = Instant::now();
         if let Some(_) = func(n, QUEENS_TIME_LIMIT) {
             println!("{} {}", n, now.elapsed().as_millis());
@@ -189,9 +189,8 @@ fn solve_reduce_vc(filename: &str) {
     let (vertex_count, edge_count, graph) = read_dimacs_graph(filename);
 
     let start_time = Instant::now();
-    if let Some(cover) = vertex_cover::vc_reduce_dlxc(graph, VC_TIME_LIMIT) {
+    if let Some(_) = vertex_cover::vc_reduce_dlxc(graph, VC_TIME_LIMIT) {
         let elapsed = start_time.elapsed();
-        // println!("{:?}, {:?}", cover.len(), cover);
         println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
     }
     else {

@@ -1,2 +1,2 @@
-#!/bin/sh
-./dlx vc pure $1
+#!/bin/bash
+timeout 60s ./dlx vc pure $1

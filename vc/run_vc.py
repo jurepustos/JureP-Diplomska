@@ -24,11 +24,13 @@ def main():
     instances_folder = sys.argv[2]
     instances = os.listdir(instances_folder)
     with ThreadPoolExecutor(max_workers=14) as executor:
-        outputs = executor.map(lambda p: run_program(*p), [(program, instances_folder + '/' + instance) for instance in instances])
-        
-    for output in outputs:
-        n, m, time = output.decode().split(' ')
-        print(n, m, time.strip())
+        param_sets = [(program, os.path.join(instances_folder, instance)) for instance in instances]
+        for output in executor.map(lambda p: run_program(*p), param_sets):
+            try:
+                n, m, time = output.decode().split(' ')
+                print(n, m, time.strip())
+            except ValueError:
+                print(n, m, '-')
 
 
 if __name__ == '__main__':

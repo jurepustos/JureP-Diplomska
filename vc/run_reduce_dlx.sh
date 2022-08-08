@@ -1,2 +1,2 @@
-#!/bin/sh
-./dlx vc reduce $1
+#!/bin/bash
+timeout 60s ./dlx vc reduce $1
