@@ -81,7 +81,10 @@ where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync
     let (tx, rx) = channel();
     let mut thread_handles = Vec::new();
 
-    let mut n_iter = (5..=80).step_by(5).into_iter();
+    let n_iter: &mut dyn Iterator<Item=usize> = &mut (5..=80).step_by(5)
+        .into_iter()
+        .map(|n| itertools::repeat_n(n, 10))
+        .flatten();
     for _ in 0..NTHREADS {
         let thread = queens_spawn_thread(n_iter.next().unwrap(), &tx, func);
         thread_handles.push(thread);
@@ -218,13 +221,17 @@ fn main() {
     if problem == "queens" {
         let algo = &args[2];
         if algo == "dlx" {
-            solve_queens(n_queens_dlx_first);
+            let n: usize = str::parse(&args[3]).unwrap();
+            n_queens_dlx_first(n, QUEENS_TIME_LIMIT);
+            // solve_queens(n_queens_dlx_first);
         }
         else if algo == "dlx_mp" {
             solve_queens_threaded(n_queens_dlx_first);
         }
         else if algo == "dfs" {
-            solve_queens(n_queens_dfs_first);   
+            let n: usize = str::parse(&args[3]).unwrap();
+            n_queens_dfs_first(n, QUEENS_TIME_LIMIT);
+            // solve_queens(n_queens_dfs_first);
         }
         else if algo == "dfs_mp" {
             solve_queens_threaded(n_queens_dfs_first);

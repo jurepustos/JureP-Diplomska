@@ -24,8 +24,8 @@ def main():
     instances_folder = sys.argv[2]
     instances = os.listdir(instances_folder)
     with ThreadPoolExecutor(max_workers=14) as executor:
-        param_sets = [(program, os.path.join(instances_folder, instance)) for instance in instances]
-        for output in executor.map(lambda p: run_program(*p), param_sets):
+        param_sets = [os.path.join(instances_folder, instance) for instance in instances]
+        for output in executor.map(lambda file: run_program(program, file), param_sets):
             try:
                 n, m, time = output.decode().split(' ')
                 print(n, m, time.strip())
