@@ -19,6 +19,7 @@ def run_program(program: str, filename: str) -> bytes:
     output = proc.stdout.read()
     return output
 
+
 def main():
     program = sys.argv[1]
     instances_folder = sys.argv[2]
@@ -30,7 +31,7 @@ def main():
                 n, m, time = output.decode().split(' ')
                 print(n, m, time.strip())
             except ValueError:
-                print(n, m, '-')
+                print('timeout', file=sys.stderr)
 
 
 if __name__ == '__main__':

@@ -457,7 +457,7 @@ mod dlx {
             Some(cover.into_iter().collect())
         }
         else {
-            return None
+            None
         }
         
     }
@@ -469,7 +469,7 @@ mod dlx {
         let components = get_connected_components(&graph);
         for component in components {
             if start_time.elapsed() >= time_limit {
-                return Some(Vec::new())
+                return None
             }
             if let Some(cover) = component_cover(&component, time_limit.saturating_sub(start_time.elapsed())) {
                 for v in cover {

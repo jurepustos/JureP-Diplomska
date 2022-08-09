@@ -2,11 +2,9 @@ pub use dlx::*;
 pub use dfs::*;
 
 mod dlx {
-
-    use std::time::Duration;
-use crate::dlxc::dlxc_iter_mp;
+    use libdlx::dlxc::dlxc_first_randomized;
+use std::time::Duration;
     use crate::dlxc::dlxc_first;
-    use crate::dlxc::dlxc_first_mp;
     use crate::dlxc::dlxc_iter;
     use crate::dlxc::Item;
     use libdlx::dlx::*;
@@ -83,7 +81,7 @@ use crate::dlxc::dlxc_iter_mp;
         Box::new(iter)
     }
 
-    pub fn n_queens_dlx_first(n : usize, time_limit: Duration) -> Option<Vec<(usize, usize)>> {
+    pub fn n_queens_dlx_first(n: usize, time_limit: Duration) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
@@ -92,21 +90,11 @@ use crate::dlxc::dlxc_iter_mp;
         solution.map(|(sol, _)| dlx_to_solution(&sol))
     }
 
-    pub fn n_queens_dlx_iter_mp(n: usize, thread_count: usize) -> Box<dyn Iterator<Item = Vec<(usize, usize)>>> {
+    pub fn n_queens_dlx_first_randomized(n: usize, time_limit: Duration) -> Option<Vec<(usize, usize)>> {
         let problem_sets = n_queens_problem(n);
         let primary_items = make_primary_items(n);
         let secondary_items = make_secondary_items(n);
-
-        let iter = dlxc_iter_mp(problem_sets, primary_items, secondary_items, Vec::new(), thread_count)
-            .map(|sol| dlx_to_solution(&sol.0));
-        Box::new(iter)
-    }
-
-    pub fn n_queens_dlx_first_mp(n: usize, thread_count: usize) -> Option<Vec<(usize, usize)>> {
-        let problem_sets = n_queens_problem(n);
-        let primary_items = make_primary_items(n);
-        let secondary_items = make_secondary_items(n);
-        let solution = dlxc_first_mp(problem_sets, primary_items, secondary_items, Vec::new(), thread_count);
+        let solution = dlxc_first_randomized(problem_sets, primary_items, secondary_items, Vec::new(), time_limit);
 
         solution.map(|(sol, _)| dlx_to_solution(&sol))
     }
@@ -114,9 +102,9 @@ use crate::dlxc::dlxc_iter_mp;
 
 mod dfs {
     use std::time::Duration;
-use std::time::Instant;
+    use std::time::Instant;
 
-fn conflict(queens: &[(usize, usize)]) -> bool {
+    fn conflict(queens: &[(usize, usize)]) -> bool {
         for i in 1..queens.len() {
             for j in 0..i {
                 let (rowa, cola) = queens[i];

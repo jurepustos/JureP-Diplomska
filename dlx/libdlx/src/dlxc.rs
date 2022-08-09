@@ -1,3 +1,7 @@
+use std::time::Instant;
+use std::time::Duration;
+use rand::seq::SliceRandom;
+
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Item<P, S, C> 
 where
@@ -366,29 +370,50 @@ C: Eq + Copy + std::fmt::Debug {
     }
 }
 
-fn choose_column<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize> 
+fn min_length_column<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize> 
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    let mut j = table.right_links[0];
-    let mut s = usize::MAX;
-    let mut c = None;
-    while j != 0 {
-        if table.lengths[j] < s {
-            c = Some(j);
-            s = table.lengths[j];
+    let mut i = table.right_links[0];
+    let mut size = usize::MAX;
+    let mut column = None;
+    while i != 0 {
+        if table.lengths[i] < size {
+            column = Some(i);
+            size = table.lengths[i];
         }
-        j = table.right_links[j];
+        i = table.right_links[i];
     }
 
-    c
+    column
+}
+
+fn min_length_column_randomized<P, S, C>(table: &DLXCTable<P, S, C>) -> Option<usize>
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
+    let mut i = table.right_links[0];
+    let mut size = usize::MAX;
+    let mut columns = Vec::new();
+    while i != 0 {
+        if table.lengths[i] < size {
+            columns = Vec::from([i]);
+            size = table.lengths[i];
+        }
+        else if table.lengths[i] == size {
+            columns.push(i);
+        }
+        i = table.right_links[i];
+    }
+    columns.choose(&mut rand::thread_rng()).cloned()
 }
 
 type Solution<P, S, C> = (Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>);
 
-fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, partial_solution: &mut Vec<usize>) 
-                    -> Option<Solution<P, S, C>>
+fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, choose_column: fn(&DLXCTable<P, S, C>) -> Option<usize>, 
+                      partial_solution: &mut Vec<usize>) -> Option<Solution<P, S, C>>
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
@@ -403,7 +428,7 @@ C: Eq + Copy + std::fmt::Debug {
             // recursion
             // go to the next level
             partial_solution.push(row_node);
-            let res = search(table, partial_solution);
+            let res = search(table, choose_column, partial_solution);
             if let Some((solution, colors)) = res {
                 return Some((solution, colors))
             }
@@ -450,7 +475,8 @@ S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
     table: DLXCTable<P, S, C>,
     stack: Vec<LevelState>,
-    state: State
+    state: State,
+    choose_column: fn(&DLXCTable<P, S, C>) -> Option<usize>
 }
 
 impl<P, S, C> DLXCIter<P, S, C>
@@ -458,17 +484,18 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    pub fn new(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
+    pub fn new(sets: Vec<Vec<Item<P, S, C>>>, choose_column: fn(&DLXCTable<P, S, C>) -> Option<usize>, 
+               primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> Self {
         let table = DLXCTable::new(sets, primary_items, secondary_items, colors);
         let stack = Vec::new();
         let state = State::CoveringColumn;
-        let mut this = DLXCIter { table, stack, state };
+        let mut this = DLXCIter { table, stack, state, choose_column };
         this.cover_column();
         this
     }
 
     fn cover_column(&mut self) {
-        if let Some(column) = choose_column(&self.table) {
+        if let Some(column) = (self.choose_column)(&self.table) {
             self.table.cover(column);
             let row_node = self.table.down_links[column];
             self.stack.push(LevelState { column, row_node });
@@ -638,7 +665,7 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors)
+    DLXCIter::new(sets, min_length_column, primary_items, secondary_items, colors)
 }
 
 pub fn dlxc_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, 
@@ -647,346 +674,15 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, primary_items, secondary_items, colors).first_solution(time_limit)
+    DLXCIter::new(sets, min_length_column, primary_items, secondary_items, colors).first_solution(time_limit)
 }
 
-use std::time::Instant;
-use std::time::Duration;
-pub use mp::*;
-
-mod mp {
-    use crate::dlxc::Solution;
-    use std::mem::replace;
-    use std::sync::mpsc::channel;
-    use std::sync::mpsc::Sender;
-    use std::mem::take;
-    use crate::dlxc::LevelState;
-    use crate::dlxc::DLXCIter;
-    use std::sync::mpsc::Receiver;
-    use crate::dlxc::Item;
-    use crate::dlxc::State;
-    use std::thread::spawn;
-    use std::sync::mpsc::SyncSender;
-    use std::thread::JoinHandle;
-    use std::sync::mpsc::sync_channel;
-    use crate::dlxc::choose_column;
-    use std::collections::VecDeque;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::atomic::Ordering;
-    use std::sync::Arc;
-    use crate::dlxc::DLXCTable;
-
-    struct Task {
-        columns: Vec<usize>,
-        rows: Vec<usize>
-    }
-    
-    fn get_tasks<P, S, C>(table: &mut DLXCTable<P, S, C>, thread_count: usize) -> VecDeque<Task>
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
-        let mut queue = VecDeque::<Task>::new();
-        if let Some(column) = choose_column(table) {
-            let mut row_node = table.down_links[column];
-            while row_node != column {
-                queue.push_front(Task {
-                    columns: vec![column],
-                    rows: vec![row_node]
-                });
-
-                row_node = table.down_links[row_node];
-            }
-
-            while !queue.is_empty() && queue.len() < thread_count {
-                let task = queue.pop_back().unwrap();
-                for i in 0..task.columns.len() {
-                    let column = task.columns[i];
-                    let row_node = task.rows[i];
-                    table.cover(column);
-                    table.cover_row(row_node);
-                }
-
-                if let Some(column) = choose_column(table) {
-                    let mut columns = task.columns.clone();
-                    columns.push(column);
-                    let mut row_node = table.down_links[column];
-                    while row_node != column {
-                        let mut rows = task.rows.clone();
-                        rows.push(row_node);
-                        queue.push_front(Task { 
-                            columns: columns.clone(), 
-                            rows
-                        });
-
-                        row_node = table.down_links[row_node];
-                    }
-                }
-                else {
-                    for i in (0..task.columns.len()).into_iter().rev() {
-                        let column = task.columns[i];
-                        let row_node = task.rows[i];
-                        table.uncover_row(row_node);
-                        table.uncover(column);
-                    }
-                    queue.push_front(task);
-                    break;
-                }
-
-                for i in (0..task.columns.len()).into_iter().rev() {
-                    let column = task.columns[i];
-                    let row_node = task.rows[i];
-                    table.uncover_row(row_node);
-                    table.uncover(column);
-                }
-            }
-        }
-        queue
-    }
-
-    fn mp_task<P, S, C>(table: DLXCTable<P, S, C>, starting_stack: Vec<LevelState>, 
-                        tx: &SyncSender<Solution<P, S, C>>, run_lock: &AtomicBool)
-    where
-    P: Eq + Copy + std::fmt::Debug,
-    S: Eq + Copy + std::fmt::Debug,
-    C: Eq + Copy + std::fmt::Debug {
-        let mut iter = DLXCIter {
-            table,
-            stack: starting_stack,
-            state: State::CoveringColumn
-        };
-        while run_lock.load(Ordering::Relaxed) == true {
-            match iter.next() {
-                Some((State::FoundSolution, Some((solution, colors)))) => {
-                    let _res = tx.send((solution, colors));
-                },
-                None => break,
-                _ => ()
-            }
-        }
-    }
-
-    fn spawn_thread<P, S, C>(table: &DLXCTable<P, S, C>, task: &Task, tx: &SyncSender<Solution<P, S, C>>, 
-                             join_tx: &Sender<usize>, thread_index: usize, run_lock: &Arc<AtomicBool>) -> JoinHandle<()>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {
-        let mut thread_table = table.clone();
-        let mut starting_stack = Vec::new();
-        for i in 0..task.columns.len() {
-            starting_stack.push(LevelState {
-                column: task.columns[i],
-                row_node: task.rows[i]
-            });
-            
-            thread_table.cover(task.columns[i]);
-            thread_table.cover_row(task.rows[i]);
-        }
-        let thread_tx = tx.clone();
-        let thread_join_tx = join_tx.clone();
-        let thread_run_lock = Arc::clone(run_lock);
-        spawn(move || {
-            mp_task(thread_table, starting_stack, &thread_tx, &thread_run_lock);
-            let _res = thread_join_tx.send(thread_index);
-        })
-    }
-
-    fn get_solution<P, S, C>(table: &DLXCTable<P, S, C>, threads: &mut Vec<Option<JoinHandle<()>>>, queue: &mut VecDeque<Task>, 
-                             tx: &SyncSender<Solution<P, S, C>>, rx: &Receiver<Solution<P, S, C>>,
-                             join_tx: &Sender<usize>, join_rx: &Receiver<usize>,
-                             run_lock: &Arc<AtomicBool>) -> Option<Solution<P, S, C>>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {
-        let mut threads_finished = 0;
-        while threads_finished < threads.len() {
-            if let Ok(solution) = rx.try_recv() {
-                run_lock.store(false, Ordering::Relaxed);
-                return Some(solution)
-            }
-
-            if let Ok(i) = join_rx.try_recv() {
-                if let Some(task) = queue.pop_back() {
-                    let thread = spawn_thread(&table, &task, &tx, &join_tx, threads.len(), &run_lock);
-                    threads.push(Some(thread));
-                }
-
-                let thread = replace(&mut threads[i], None);
-                let _res = thread.unwrap().join();
-                threads_finished += 1;
-            }
-        }
-        None
-    }
-
-    pub fn dlxc_first_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
-                                  secondary_items: Vec<S>, colors: Vec<C>, 
-                                  thread_count: usize) -> Option<Solution<P, S, C>>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {   
-        let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
-        let run_lock = Arc::new(AtomicBool::new(true));
-        let (tx, rx) = sync_channel(1000);
-        let (join_tx, join_rx) = channel();
-    
-        let mut threads = Vec::new();
-        let mut queue = get_tasks(&mut table, thread_count);
-    
-        while threads.len() < thread_count {
-            if let Some(task) = queue.pop_back() {
-                let thread = spawn_thread(&table, &task, &tx, &join_tx, threads.len(), &run_lock);
-                threads.push(Some(thread));
-            }
-            else {
-                break;
-            }   
-        }
-
-        let result = get_solution(&table, &mut threads, &mut queue, &tx, &rx, &join_tx, &join_rx, &run_lock);
-        
-        let running_threads = threads
-            .into_iter()
-            .filter(Option::is_some)
-            .map(Option::unwrap);
-        for thread in running_threads {
-            let _res = thread.join();
-        }
-
-        result
-    }
-    
-    pub struct DLXCIterMP<P, S, C>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {
-        table: DLXCTable<P, S, C>,
-        run_lock: Arc<AtomicBool>,
-        queue: VecDeque<Task>,
-        tx: SyncSender<Solution<P, S, C>>,
-        rx: Receiver<Solution<P, S, C>>,
-        join_tx: Sender<usize>,
-        join_rx: Receiver<usize>,
-        threads: Vec<Option<JoinHandle<()>>>,
-        threads_finished: usize
-    }
-
-    impl<P, S, C> DLXCIterMP<P, S, C>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {
-        pub fn stop(self) {
-            drop(self)
-        }
-
-        fn spawn_thread(&self, task: Task, thread_index: usize) -> JoinHandle<()> {
-            let mut thread_table = self.table.clone();
-            let mut starting_stack = Vec::new();
-            for i in 0..task.columns.len() {
-                starting_stack.push(LevelState {
-                    column: task.columns[i],
-                    row_node: task.rows[i]
-                });
-
-                thread_table.cover(task.columns[i]);
-                thread_table.cover_row(task.rows[i]);
-            }
-            
-            let thread_tx = self.tx.clone();
-            let thread_join_tx = self.join_tx.clone();
-            let thread_run_lock = Arc::clone(&self.run_lock);
-            spawn(move || {
-                mp_task(thread_table, starting_stack, &thread_tx, &thread_run_lock);
-                let _res = thread_join_tx.send(thread_index);
-            })
-        }
-    }
-
-    impl<P, S, C> Iterator for DLXCIterMP<P, S, C>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {
-        type Item = Solution<P, S, C>;
-        fn next(&mut self) -> Option<Self::Item> {
-            while self.threads_finished < self.threads.len() {
-                if let Ok(solution) = self.rx.try_recv() {
-                    return Some(solution)
-                }
-                
-                if let Ok(i) = self.join_rx.try_recv() {
-                    if let Some(task) = self.queue.pop_back() {
-                        let thread = self.spawn_thread(task, self.threads.len());
-                        self.threads.push(Some(thread));
-                    }
-
-                    let thread = replace(&mut self.threads[i], None);
-                    let _res = thread.unwrap().join();
-                    self.threads_finished += 1;
-                }
-            }
-            None
-        }
-    }
-
-    impl<P, S, C> Drop for DLXCIterMP<P, S, C>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {
-        fn drop(&mut self) {
-            self.run_lock.store(false, Ordering::Relaxed);
-            let threads = take(&mut self.threads);
-            let running_threads = threads
-                .into_iter()
-                .filter(Option::is_some)
-                .map(Option::unwrap);
-            for thread in running_threads {
-                let _res = thread.join();
-            }
-        }
-    }
-    
-    pub fn dlxc_iter_mp<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, 
-                                secondary_items: Vec<S>, colors: Vec<C>, 
-                                thread_count: usize) -> DLXCIterMP<P, S, C>
-    where
-    P: 'static + Eq + Copy + std::fmt::Debug + Send,
-    S: 'static + Eq + Copy + std::fmt::Debug + Send,
-    C: 'static + Eq + Copy + std::fmt::Debug + Send {   
-        let mut table = DLXCTable::new(sets, primary_items, secondary_items, colors);
-        let run_lock = Arc::new(AtomicBool::new(true));
-        let (tx, rx) = sync_channel(1000);
-        let (join_tx, join_rx) = channel();
-        
-        let mut threads = Vec::new();
-        let mut queue = get_tasks(&mut table, thread_count);
-
-        while threads.len() < thread_count {
-            if let Some(task) = queue.pop_back() {
-                let thread = spawn_thread(&table, &task, &tx, &join_tx, threads.len(), &run_lock);
-                threads.push(Some(thread));
-            }
-            else {
-                break;
-            }
-        }
-
-        DLXCIterMP {
-            table, 
-            run_lock, 
-            tx,
-            rx, 
-            join_tx,
-            join_rx,
-            queue,
-            threads,
-            threads_finished: 0
-        }
-    }
+pub fn dlxc_first_randomized<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, 
+                                      colors: Vec<C>, time_limit: Duration) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)>
+where 
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
+    DLXCIter::new(sets, min_length_column_randomized, primary_items, secondary_items, colors).first_solution(time_limit)
 }
+

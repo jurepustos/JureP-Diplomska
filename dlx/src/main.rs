@@ -2,6 +2,7 @@ mod queens;
 mod sudoku;
 mod vertex_cover;
 
+use crate::queens::n_queens_dlx_first_randomized;
 use std::path::Display;
 use std::fs::read_dir;
 use std::fs::metadata;
@@ -11,9 +12,7 @@ use std::iter::FromIterator;
 use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::BufReader;
-use queens::n_queens_dlx_iter_mp;
 use vertex_cover::vc_reduce_dlxc;
-use queens::n_queens_dlx_first_mp;
 use sudoku::sudoku_dlx_first;
 use std::time::Instant;
 use std::thread::JoinHandle;
@@ -33,8 +32,8 @@ use libdlx::*;
 use maplit::*;
 
 static NTHREADS: usize = 14;
-static QUEENS_TIME_LIMIT: Duration = Duration::from_secs(60);
-static VC_TIME_LIMIT: Duration = Duration::from_secs(60);
+static QUEENS_TIME_LIMIT: Duration = Duration::MAX;
+static VC_TIME_LIMIT: Duration = Duration::MAX;
 
 fn print_queens_solution(n: usize, solution: Vec<(usize, usize)>) {
     let mut output = String::from("");
@@ -76,8 +75,7 @@ fn queens_message_format(n: usize, message: Option<(Vec<(usize, usize)>, Duratio
     }
 }
 
-fn solve_queens_threaded<F>(func: F)
-where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync + Send + Copy {
+fn solve_queens_threaded(func: fn(usize, Duration) -> Option<Vec<(usize, usize)>>) {
     let (tx, rx) = channel();
     let mut thread_handles = Vec::new();
 
@@ -112,16 +110,13 @@ where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync
     }
 }
 
-fn solve_queens<F>(func: F)
-where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Copy {
-    for n in (5..=80).step_by(5) {
-        let now = Instant::now();
-        if let Some(_) = func(n, QUEENS_TIME_LIMIT) {
-            println!("{} {}", n, now.elapsed().as_millis());
-        }
-        else {
-            println!("{} -", n);
-        }
+fn solve_queens(n: usize, func: fn(usize, Duration) -> Option<Vec<(usize, usize)>>) {
+    let now = Instant::now();
+    if let Some(_) = func(n, QUEENS_TIME_LIMIT) {
+        println!("{} {}", n, now.elapsed().as_millis());
+    }
+    else {
+        println!("{} -", n);
     }
 }
 
@@ -205,7 +200,7 @@ fn solve_pure_vc(filename: &str) {
     let (vertex_count, edge_count, graph) = read_dimacs_graph(filename);
 
     let start_time = Instant::now();
-    if let Some(cover) = vertex_cover::vc_pure_dlxc(graph, VC_TIME_LIMIT) {
+    if let Some(_) = vertex_cover::vc_pure_dlxc(graph, VC_TIME_LIMIT) {
         let elapsed = start_time.elapsed();
         // println!("{:?}, {:?}", cover.len(), cover);
         println!("{} {} {}", vertex_count, edge_count, elapsed.as_millis());
@@ -222,16 +217,18 @@ fn main() {
         let algo = &args[2];
         if algo == "dlx" {
             let n: usize = str::parse(&args[3]).unwrap();
-            n_queens_dlx_first(n, QUEENS_TIME_LIMIT);
-            // solve_queens(n_queens_dlx_first);
+            solve_queens(n, n_queens_dlx_first);
+        }
+        else if algo == "dlx_random" {
+            let n: usize = str::parse(&args[3]).unwrap();
+            solve_queens(n, n_queens_dlx_first_randomized);
         }
         else if algo == "dlx_mp" {
             solve_queens_threaded(n_queens_dlx_first);
         }
         else if algo == "dfs" {
             let n: usize = str::parse(&args[3]).unwrap();
-            n_queens_dfs_first(n, QUEENS_TIME_LIMIT);
-            // solve_queens(n_queens_dfs_first);
+            solve_queens(n, n_queens_dfs_first);
         }
         else if algo == "dfs_mp" {
             solve_queens_threaded(n_queens_dfs_first);
