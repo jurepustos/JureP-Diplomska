@@ -51,9 +51,8 @@ fn print_queens_solution(n: usize, solution: Vec<(usize, usize)>) {
     println!("{}", output);
 }
 
-fn queens_spawn_thread<F>(n: usize, tx: &Sender<(usize, Option<(Vec<(usize, usize)>, Duration)>)>, 
-                          func: F) -> JoinHandle<()> 
-where F: 'static + FnOnce(usize, Duration) -> Option<Vec<(usize, usize)>> + Sync + Send + Copy {
+fn queens_spawn_thread(n: usize, tx: &Sender<(usize, Option<(Vec<(usize, usize)>, Duration)>)>, 
+                       func: fn(usize, Duration) -> Option<Vec<(usize, usize)>>) -> JoinHandle<()> {
     let thread_tx = tx.clone();
     spawn(move || {
         let now = Instant::now();
@@ -112,12 +111,8 @@ fn solve_queens_threaded(func: fn(usize, Duration) -> Option<Vec<(usize, usize)>
 
 fn solve_queens(n: usize, func: fn(usize, Duration) -> Option<Vec<(usize, usize)>>) {
     let now = Instant::now();
-    if let Some(_) = func(n, QUEENS_TIME_LIMIT) {
-        println!("{} {}", n, now.elapsed().as_millis());
-    }
-    else {
-        println!("{} -", n);
-    }
+    func(n, QUEENS_TIME_LIMIT);
+    println!("{} {}", n, now.elapsed().as_millis());
 }
 
 fn test_vertex_cover() {

@@ -1,5 +1,7 @@
+use std::time::Instant;
+use std::time::Duration;
 use std::mem::take;
-
+use rand::seq::SliceRandom;
 
 #[derive(Clone,PartialEq,Eq,Debug)]
 pub struct DLXTable<T: Eq + Copy + std::fmt::Debug> {
@@ -212,24 +214,47 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXTable<T> {
     }
 }
 
-fn choose_column<T>(table: &DLXTable<T>) -> Option<usize> 
-where T: Eq + Copy + std::fmt::Debug {
-    let mut j = table.right_links[0];
-    let mut s = usize::MAX;
-    let mut c = None;
-    while j != 0 {
-        if table.lengths[j] < s {
-            c = Some(j);
-            s = table.lengths[j];
+fn min_length_column<T>(table: &DLXTable<T>) -> Option<usize> 
+where
+T: Eq + Copy + std::fmt::Debug {
+    let mut i = table.right_links[0];
+    let mut size = usize::MAX;
+    let mut column = None;
+    while i != 0 {
+        if table.lengths[i] < size {
+            column = Some(i);
+            size = table.lengths[i];
         }
-        j = table.right_links[j];
+        i = table.right_links[i];
     }
 
-    c
+    column
 }
 
-fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mut Vec<usize>) -> Option<Vec<usize>> {
-    if let Some(column) = choose_column(table) {
+fn min_length_column_randomized<T>(table: &DLXTable<T>) -> Option<usize>
+where
+T: Eq + Copy + std::fmt::Debug {
+    let mut i = table.right_links[0];
+    let mut size = usize::MAX;
+    let mut columns = Vec::new();
+    while i != 0 {
+        if table.lengths[i] < size {
+            columns = Vec::from([i]);
+            size = table.lengths[i];
+        }
+        else if table.lengths[i] == size {
+            columns.push(i);
+        }
+        i = table.right_links[i];
+    }
+    columns.choose(&mut rand::thread_rng()).cloned()
+}
+
+fn search<T>(table: &mut DLXTable<T>, choose_column: fn(&DLXTable<T>) -> Option<usize>, 
+             partial_solution: &mut Vec<usize>) -> Option<Vec<usize>>
+where
+T: Eq + Copy + std::fmt::Debug {
+    if let Some(column) = min_length_column(table) {
         table.cover(column);
 
         let mut row_node = table.down_links[column];
@@ -238,12 +263,12 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mu
 
             // recursion
             // go to the next level
-            solution.push(row_node);
-            let res = search(table, solution);
+            partial_solution.push(row_node);
+            let res = search(table, choose_column, partial_solution);
             if let Some(sol) = res {
                 return Some(sol)
             }
-            solution.pop();
+            partial_solution.pop();
             
             table.uncover_row(row_node);
 
@@ -254,7 +279,7 @@ fn search<T: Eq + Copy + std::fmt::Debug>(table: &mut DLXTable<T>, solution: &mu
         None
     }
     else {
-        Some(take(solution))
+        Some(take(partial_solution))
     }
 }
 
@@ -275,11 +300,12 @@ struct LevelState {
 pub struct DLXIter<T: Eq + Copy + std::fmt::Debug> {
     table: DLXTable<T>,
     stack: Vec<LevelState>,
-    state: State
+    state: State,
+    choose_column: fn(&DLXTable<T>) -> Option<usize>
 }
 
 impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
-    pub fn from_table(mut table: DLXTable<T>) -> Self {
+    pub fn from_table(mut table: DLXTable<T>, choose_column: fn(&DLXTable<T>) -> Option<usize>) -> Self {
         let mut stack = Vec::new();
         let state = State::CoveringRow;
         if let Some(column) = choose_column(&table) {
@@ -291,10 +317,11 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
             table.cover(column);
         }
 
-        DLXIter { table, stack, state }
+        DLXIter { table, stack, state, choose_column }
     }
 
-    pub fn new(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
+    pub fn new(sets: Vec<Vec<T>>, choose_column: fn(&DLXTable<T>) -> Option<usize>,
+               primary_items: Vec<T>, secondary_items: Vec<T>) -> Self {
         let mut table = DLXTable::new(sets, primary_items, secondary_items);
         let mut stack = Vec::new();
         let state = State::CoveringRow;
@@ -307,7 +334,7 @@ impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
             table.cover(column);
         }
 
-        DLXIter { table, stack, state }
+        DLXIter { table, stack, state, choose_column }
     }
 
     fn cover_column(&mut self, column: usize) {
@@ -358,7 +385,7 @@ impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
         while !self.stack.is_empty() {
             match self.state {
                 State::CoveringColumn => {
-                    if let Some(column) = choose_column(&self.table) {
+                    if let Some(column) = (self.choose_column)(&self.table) {
                         // cover next column
                         self.cover_column(column);
                     }
@@ -391,16 +418,64 @@ impl<T: Eq + Copy + std::fmt::Debug> Iterator for DLXIter<T> {
     }
 }
 
-pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> DLXIter<T> {
-    DLXIter::new(sets, primary_items, secondary_items)
+impl<T: Eq + Copy + std::fmt::Debug> DLXIter<T> {
+    fn first_solution(&mut self, time_limit: Duration) -> Option<Vec<Vec<T>>> {
+        let start = Instant::now();
+        while !self.stack.is_empty() {
+            if start.elapsed() >= time_limit {
+                return None
+            }
+            match self.state {
+                State::CoveringColumn => {
+                    if let Some(column) = (self.choose_column)(&self.table) {
+                        // cover next column
+                        self.cover_column(column);
+                    }
+                    else {
+                        // all columns are covered
+                        self.state = State::BacktrackingRow;
+                        return Some(self.get_solution())
+                    }
+                },
+                State::CoveringRow => {
+                    // cover the current row and set up for the next level 
+                    let level = self.stack.last().unwrap();
+                    self.table.cover_row(level.row_node);
+                    self.state = State::CoveringColumn;
+                },
+                State::BacktrackingRow => {
+                    // uncover the current row and set up to cover the next one
+                    self.backtrack_row()
+                }
+                State::BacktrackingColumn => {
+                    // uncover the last covered column
+                    // and set up to continue
+                    let level = self.stack.pop().unwrap();
+                    self.table.uncover(level.column);
+                    self.state = State::BacktrackingRow;
+                },
+            }
+        }
+        None
+    } 
 }
 
-pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> Option<Vec<Vec<T>>>
+pub fn dlx_iter<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> DLXIter<T> {
+    DLXIter::new(sets, min_length_column, primary_items, secondary_items)
+}
+
+pub fn dlx_iter_randomized<T: Eq + Copy + std::fmt::Debug>(sets: Vec<Vec<T>>, primary_items: Vec<T>, secondary_items: Vec<T>) -> DLXIter<T> {
+    DLXIter::new(sets, min_length_column_randomized, primary_items, secondary_items)
+}
+
+pub fn dlx_first<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                    secondary_items: Vec<T>, time_limit: Duration) -> Option<Vec<Vec<T>>>
 where T: Eq + Copy + std::fmt::Debug {
-    let mut table = DLXTable::new(sets, primary_items, secondary_items);
-    search(&mut table, &mut Vec::new())
-        .map(|solution| solution
-            .into_iter()
-            .map(|node_index| table.get_row(node_index))
-            .collect())
+    DLXIter::new(sets, min_length_column, primary_items, secondary_items).first_solution(time_limit)
+}
+
+pub fn dlx_first_randomized<T>(sets: Vec<Vec<T>>, primary_items: Vec<T>, 
+                               secondary_items: Vec<T>, time_limit: Duration) -> Option<Vec<Vec<T>>>
+where T: Eq + Copy + std::fmt::Debug {
+    DLXIter::new(sets, min_length_column_randomized, primary_items, secondary_items).first_solution(time_limit)
 }

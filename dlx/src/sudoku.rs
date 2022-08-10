@@ -147,6 +147,7 @@ fn init_grid(clues: &[Clue]) -> Grid {
 
 mod dlx {
     use itertools::iproduct;
+    use std::time::Duration;
     use libdlx::dlx::{dlx_first, dlx_iter, DLXIter};
     use super::{Clue, get_block_index, init_grid};
 
@@ -279,7 +280,7 @@ mod dlx {
             }
         }
     
-        dlx_first(sets, items, vec![]).map(|solution| to_clues(&solution))
+        dlx_first(sets, items, vec![], Duration::MAX).map(|solution| to_clues(&solution))
     }
 }
 

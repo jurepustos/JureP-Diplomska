@@ -413,7 +413,7 @@ C: Eq + Copy + std::fmt::Debug {
 type Solution<P, S, C> = (Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>);
 
 fn search<P, S, C>(table: &mut DLXCTable<P, S, C>, choose_column: fn(&DLXCTable<P, S, C>) -> Option<usize>, 
-                      partial_solution: &mut Vec<usize>) -> Option<Solution<P, S, C>>
+                   partial_solution: &mut Vec<usize>) -> Option<Solution<P, S, C>>
 where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
@@ -668,13 +668,22 @@ C: Eq + Copy + std::fmt::Debug {
     DLXCIter::new(sets, min_length_column, primary_items, secondary_items, colors)
 }
 
+pub fn dlxc_iter_randomized<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, colors: Vec<C>) -> DLXCIter<P, S, C>
+where
+P: Eq + Copy + std::fmt::Debug,
+S: Eq + Copy + std::fmt::Debug,
+C: Eq + Copy + std::fmt::Debug {
+    DLXCIter::new(sets, min_length_column_randomized, primary_items, secondary_items, colors)
+}
+
 pub fn dlxc_first<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, 
                            colors: Vec<C>, time_limit: Duration) -> Option<(Vec<Vec<Item<P, S, C>>>, Vec<(S, Option<C>)>)>
 where 
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, min_length_column, primary_items, secondary_items, colors).first_solution(time_limit)
+    DLXCIter::new(sets, min_length_column, primary_items, secondary_items, colors)
+        .first_solution(time_limit)
 }
 
 pub fn dlxc_first_randomized<P, S, C>(sets: Vec<Vec<Item<P, S, C>>>, primary_items: Vec<P>, secondary_items: Vec<S>, 
@@ -683,6 +692,7 @@ where
 P: Eq + Copy + std::fmt::Debug,
 S: Eq + Copy + std::fmt::Debug,
 C: Eq + Copy + std::fmt::Debug {
-    DLXCIter::new(sets, min_length_column_randomized, primary_items, secondary_items, colors).first_solution(time_limit)
+    DLXCIter::new(sets, min_length_column_randomized, primary_items, secondary_items, colors)
+        .first_solution(time_limit)
 }
 
