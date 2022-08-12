@@ -21,12 +21,7 @@ def main():
     avg_rows.sort(key=itemgetter(0))
     for key, avg in avg_rows:
         print(key, *avg, sep=' & ', end=' \\\\\n')
-    
-
-    
-    
-
-
+        
 
 if __name__ == '__main__':
     main()
