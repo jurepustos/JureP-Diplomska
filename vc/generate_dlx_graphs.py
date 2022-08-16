@@ -44,7 +44,7 @@ def generate_small(instances_folder: str):
 
 
 def generate_medium(instances_folder: str):
-    probs = [0.2]
+    probs = [0.2, 0.3, 0.4, 0.5, 0.6]
     
     sizes = [n for n in range(51,71) for _ in range(10)]
 
