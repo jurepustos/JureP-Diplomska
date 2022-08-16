@@ -140,7 +140,7 @@ fn test_vertex_cover() {
 fn read_dimacs_graph(filename: &str) -> (usize, usize, BTreeMap<usize, BTreeSet<usize>>) {
     let file = fs::File::open(filename).expect("The input file does not exist.");
     let reader = BufReader::new(file);
-    let lines_iter = reader.lines().into_iter()
+    let mut lines_iter = reader.lines().into_iter()
         .map(|line| line.unwrap()
             .to_owned()
             .split(" ")
@@ -148,16 +148,14 @@ fn read_dimacs_graph(filename: &str) -> (usize, usize, BTreeMap<usize, BTreeSet<
             .collect::<Vec<_>>())
         .map(|tokens| (tokens[0].clone(), tokens[1].clone()));
 
-    // let (vc, ec) = lines_iter.next().unwrap();
-    // let vertex_count = str::parse::<usize>(&vc[1..]).unwrap();
-    // let edge_count = str::parse::<usize>(&ec).unwrap();
-
     let mut edges = Vec::<(usize, usize)>::new();
+    // n has form #nnnn
+    let (n, m) = lines_iter.next().unwrap();
+    let vertex_count = str::parse(&n[1..]).unwrap();
+    let edge_count = str::parse(&m).unwrap();
     for (v1, v2) in lines_iter {
         edges.push((str::parse(&v1).unwrap(), str::parse(&v2).unwrap()));
     }
-
-    let edge_count = edges.len();
 
     let mut graph = BTreeMap::<usize, BTreeSet<usize>>::new();
     for (v1, v2) in edges {
@@ -171,9 +169,6 @@ fn read_dimacs_graph(filename: &str) -> (usize, usize, BTreeMap<usize, BTreeSet<
         }
         graph.get_mut(&v2).unwrap().insert(v1);
     }
-
-    let max_vertex = graph.keys().max().cloned().unwrap_or(0);
-    let vertex_count = max_vertex + 1;
 
     (vertex_count, edge_count, graph)
 }
