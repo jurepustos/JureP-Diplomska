@@ -6,11 +6,11 @@ dense_probs=("02" "03" "04" "05" "06")
 
 run_tests () {
     for p in "${sparse_probs[@]}"; do
-        python3 run_vc.py ./run_$1.sh ./instances/sparse/$p > ./results/vc_$1_sparse_${p}_results.txt
+        python3 run_vc.py ./run_$1.sh ./instances/sparse/$p > ./results/sparse/vc_$1_sparse_${p}_results.txt
     done
 
     for p in "${dense_probs[@]}"; do
-        python3 run_vc.py ./run_$1.sh ./instances/dense/$p > ./results/vc_$1_dense_${p}_results.txt
+        python3 run_vc.py ./run_$1.sh ./instances/dense/$p > ./results/dense/vc_$1_dense_${p}_results.txt
     done
 }
 
