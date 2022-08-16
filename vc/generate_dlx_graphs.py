@@ -21,6 +21,7 @@ def save_graph(graph: networkx.Graph, filename: str):
     edges = [(x,y) for x,y in graph.edges if x < y] 
     with open(filename, mode='w+') as file:
         print(f'{graph.number_of_nodes()} {len(edges)}')
+        print(f'#{graph.number_of_nodes()} {len(edges)}', file=file)
         for x,y in edges:
             print(x, y, file=file)
         file.flush()
@@ -43,14 +44,14 @@ def generate_small(instances_folder: str):
 
 
 def generate_medium(instances_folder: str):
-    probs = [0.3, 0.4, 0.5, 0.6]
+    probs = [0.2]
     
     sizes = [n for n in range(51,71) for _ in range(10)]
 
     for p in probs:
         format_p = str(p).replace('.', '')
 
-        os.makedirs(os.path.join(instances_folder, 'medium', format_p), exist=True)
+        os.makedirs(os.path.join(instances_folder, 'medium', format_p), exist_ok=True)
 
         for i,n in enumerate(sizes):
             graph = generate_graph(n, p)
