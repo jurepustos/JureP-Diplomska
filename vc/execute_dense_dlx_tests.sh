@@ -1,5 +1,5 @@
 #!/bin/bash
-probs=("005" "01" "02" "03" "04" "05" "06")
+probs=("07" "08" "09")
 
 # $1: small/medium/large/xlarge
 # $2..: vc/pure_dlx/reduce_dlx 

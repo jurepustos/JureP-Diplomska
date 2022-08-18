@@ -27,9 +27,7 @@ def save_graph(graph: networkx.Graph, filename: str):
         file.flush()
 
 
-def generate_small(instances_folder: str):
-    probs = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
-    
+def generate_small(instances_folder: str, probs: List[float]):
     sizes = [n for n in range(10,51) for _ in range(10)]
 
     for p in probs:
@@ -43,9 +41,7 @@ def generate_small(instances_folder: str):
             save_graph(graph, filename)
 
 
-def generate_medium(instances_folder: str):
-    probs = [0.2, 0.3, 0.4, 0.5, 0.6]
-    
+def generate_medium(instances_folder: str, probs: List[float]):
     sizes = [n for n in range(51,71) for _ in range(10)]
 
     for p in probs:
@@ -59,9 +55,7 @@ def generate_medium(instances_folder: str):
             save_graph(graph, filename)
 
 
-def generate_large(instances_folder: str):
-    probs = [0.4, 0.5, 0.6]
-    
+def generate_large(instances_folder: str, probs: List[float]):
     sizes = [n for n in range(71,101) for _ in range(10)]
 
     for p in probs:
@@ -75,16 +69,41 @@ def generate_large(instances_folder: str):
             save_graph(graph, filename)
 
 
+def generate_xlarge(instances_folder: str, probs: List[float]):
+    sizes = [n for n in range(101,151) for _ in range(10)]
+
+    for p in probs:
+        format_p = str(p).replace('.', '')
+
+        os.makedirs(os.path.join(instances_folder, 'xlarge', format_p), exist_ok=True)
+
+        for i,n in enumerate(sizes):
+            graph = generate_graph(n, p)
+            filename = os.path.join(instances_folder, 'xlarge', format_p, f'xlarge_graph_{p}_{i}.input')
+            save_graph(graph, filename)
+
+
+def generate_dense(instances_folder: str):
+    generate_small(instances_folder, [0.7, 0.8, 0.9])
+    generate_medium(instances_folder, [0.7, 0.8, 0.9])
+    generate_large(instances_folder, [0.7, 0.8, 0.9])
+    generate_xlarge(instances_folder, [0.7, 0.8, 0.9])
+
+
 def main():
     size = sys.argv[1]
     instances_folder = sys.argv[2]
 
     if size == 'small':
-        generate_small(instances_folder)
+        generate_small(instances_folder, [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
     if size == 'medium':
-        generate_medium(instances_folder)
+        generate_medium(instances_folder, [0.2, 0.3, 0.4, 0.5, 0.6])
     if size == 'large':
-        generate_large(instances_folder)
+        generate_large(instances_folder, [0.4, 0.5, 0.6])
+    if size == 'xlarge':
+        generate_xlarge(instances_folder, [0.5, 0.6])
+    if size == 'dense':
+        generate_dense(instances_folder)
 
 
 if __name__ == '__main__':
