@@ -2,7 +2,7 @@
 sparse_probs=("005" "01")
 dense_probs=("02" "03" "04" "05" "06")
 
-# $1..: vc/pure_dlx/reduce_dlx
+# $1..: solver/pure_dlx/reduce_dlx
 
 run_tests () {
     for p in "${sparse_probs[@]}"; do

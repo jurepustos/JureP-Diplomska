@@ -1,8 +1,8 @@
 #!/bin/bash
-probs=("005" "01" "02" "03" "04" "05" "06")
+probs=("005" "01" "02" "03" "04")
 
 # $1: small/medium/large/xlarge
-# $2..: vc/pure_dlx/reduce_dlx 
+# $2..: solver/pure_dlx/reduce_dlx 
 
 run_tests () {
     mkdir ./results/$1;
